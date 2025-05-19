@@ -1,0 +1,19 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug navcat",
+            "cargo": {
+                "args": [
+                    "build",
+                    "--bin=navcat",
+                    "--package=navcat"
+                ]
+            },
+            "args": ["-f", "/Users/lainovic/dev/bugs/GOSDK-174438/navapp_2025-04-11_10_22_15+0900.txt"],
+            "cwd": "${workspaceFolder}"
+        }
+    ]
+} 
