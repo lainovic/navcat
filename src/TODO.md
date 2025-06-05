@@ -1,0 +1,3 @@
+- [ ] logger singleton
+- [ ] add logger levels
+- [ ] refactor

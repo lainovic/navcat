@@ -13,12 +13,15 @@ use domain::filter_config::FilterConfig;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
-    let config = FilterConfig::parse(&args.levels, &args.tags, args.guidance, args.routing);
-    let filter = LogFilter::new(config.levels, config.tags, config.blacklisted_items);
+    let config = FilterConfig::parse(&args);
+    let mut filter = LogFilter::new(config);
+    filter.set_verbose(args.debug);
 
-    println!("Starting with filters:");
-    println!("Levels: {:?}", filter.levels);
-    println!("Tags: {:?}", filter.tags);
+    println!("Starting with:");
+    println!("-> Levels: {:?}", filter.levels);
+    println!("-> Tags: {:?}", filter.tags.all_tags);
+    println!("-> Blacklisted items: {:?}", filter.blacklisted_items);
+
 
     match args.file {
         Some(file_path) => {

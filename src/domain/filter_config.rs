@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+use crate::application::cli::Args;
+
 #[derive(Debug)]
 pub struct FilterConfig {
     pub levels: Vec<&'static str>,
@@ -12,7 +14,7 @@ pub struct TagCategories {
     pub top_classes: Vec<String>,
     pub steps: Vec<String>,
     pub engines: Vec<String>,
-    all_tags: HashSet<String>,
+    pub all_tags: HashSet<String>,
 }
 
 impl TagCategories {
@@ -46,35 +48,38 @@ impl TagCategories {
     }
 
     pub fn contains_tag(&self, tag: &str) -> bool {
-        self.all_tags.contains(tag)
+        self.all_tags.iter().any(|t| tag.contains(t))
     }
 }
 
 impl FilterConfig {
-    pub fn parse(
-        levels_str: &str,
-        tags_str: &str,
-        include_guidance: bool,
-        include_routing: bool,
-    ) -> Self {
-        let levels = Self::to_levels(levels_str);
-        let tags = Self::to_tags(tags_str);
+    pub fn parse(args: &Args) -> Self {
+        let levels = Self::to_levels(&args.levels);
+        let mut tags = Self::to_tags(&args.tags);
+        let mut blacklisted_terms = Vec::new();
 
-        let mut blacklisted_items = Vec::new();
-        if !include_guidance {
-            blacklisted_items.push("guidance");
-            blacklisted_items.push("instruction");
-            blacklisted_items.push("warning");
+        if !args.guidance {
+            tags = tags
+                .into_iter()
+                .filter(|tag| !tag.contains("Guidance") && !tag.contains("Warning"))
+                .collect();
+            blacklisted_terms.push("guidance");
+            blacklisted_terms.push("instruction");
+            blacklisted_terms.push("warning");
         }
 
-        if !include_routing {
-            blacklisted_items.push("router");
+        if !args.routing {
+            tags = tags
+                .into_iter()
+                .filter(|tag| !tag.contains("Planner"))
+                .collect();
+            blacklisted_terms.push("planner");
         }
 
         Self {
             levels,
             tags: TagCategories::new(tags),
-            blacklisted_items,
+            blacklisted_items: blacklisted_terms,
         }
     }
 

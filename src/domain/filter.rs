@@ -1,10 +1,11 @@
 use crate::domain::filter_config::TagCategories;
-use std::fmt;
 use crate::domain::message_highlighter::MessageHighlighter;
 
-const RESET_COLOR: &str = "\x1b[0m";
+use super::filter_config::FilterConfig;
 
-#[derive(Clone)]
+pub const RESET_COLOR: &str = "\x1b[0m";
+
+#[derive(Clone, Debug)]
 pub struct LogFilter {
     pub levels: Vec<&'static str>,
     pub tags: TagCategories,
@@ -12,26 +13,12 @@ pub struct LogFilter {
     message_highlighter: MessageHighlighter,
 }
 
-impl fmt::Debug for LogFilter {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("LogFilter")
-            .field("levels", &self.levels)
-            .field("tags", &self.tags)
-            .field("message_highlighter", &self.message_highlighter)
-            .finish()
-    }
-}
-
 impl LogFilter {
-    pub fn new(
-        levels: Vec<&'static str>,
-        tags: TagCategories,
-        blacklisted_items: Vec<&'static str>
-) -> Self {
+    pub fn new(config: FilterConfig) -> Self {
         Self { 
-            levels, 
-            tags,
-            blacklisted_items,
+            levels: config.levels, 
+            tags: config.tags,
+            blacklisted_items: config.blacklisted_items,
             message_highlighter: MessageHighlighter::new(),
         }
     }
@@ -80,7 +67,7 @@ impl LogFilter {
         let (level_idx, tag_idx) = if parts[0].contains('-') && parts[0].len() == 10 {
             // YYYY-MM-DD format
             if parts[1].contains('.') {
-                // Has milliseconds
+                // Has milliseconds and a time-zone
                 (5, 6) // Format: YYYY-MM-DD HH:MM:SS.mmm +TZ PID TID LEVEL TAG
             } else {
                 (4, 5) // Format: YYYY-MM-DD HH:MM:SS PID TID LEVEL TAG
@@ -125,8 +112,12 @@ impl LogFilter {
                 colored_line.push_str(self.get_tag_color(tag));
                 colored_line.push_str(part);
                 colored_line.push_str(RESET_COLOR);
+            } else if i > tag_idx {
+                let message = parts[tag_idx + 1..].join(" ");
+                colored_line.push_str(&self.message_highlighter.highlight_message(&message));
+                break; // Skip remaining parts since we've joined them
             } else {
-                colored_line.push_str(&self.message_highlighter.highlight_message(part));
+                colored_line.push_str(part);
             }
             colored_line.push(' ');
         }
@@ -140,5 +131,9 @@ impl LogFilter {
 
     pub fn remove_highlight_word(&mut self, word: &str) {
         self.message_highlighter.remove_highlight_word(word);
+    }
+
+    pub fn set_verbose(&mut self, verbose: bool) {
+        self.message_highlighter.set_verbose(verbose);
     }
 }
