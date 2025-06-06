@@ -122,31 +122,49 @@ impl<'a> MessageProcessor<'a> {
     fn resolve_overlapping_matches(&self, matches: Vec<Match>, highlighter: &MessageHighlighter) -> Vec<Match> {
         let mut resolved = Vec::new();
         let mut current: Option<Match> = None;
+        let mut overlapping: Vec<Match> = Vec::new();
 
         for m in matches {
             match current {
-                None => current = Some(m),
-                Some(ref mut curr) => {
+                None => {
+                    current = Some(m.clone());
+                    overlapping.push(m);
+                }
+                Some(ref curr) => {
                     if m.start <= curr.end {
-                        // Overlapping match - keep the one with higher priority
-                        if m.color == highlighter.red_rule.color {
-                            *curr = m;
-                        } else if curr.color != highlighter.red_rule.color && m.color == highlighter.green_rule.color {
-                            *curr = m;
-                        }
+                        // Still overlapping with current group
+                        overlapping.push(m);
                     } else {
-                        resolved.push(curr.clone());
-                        current = Some(m);
+                        // No longer overlapping, resolve current group
+                        if let Some(best_match) = self.find_highest_priority_match(&overlapping, highlighter) {
+                            resolved.push(best_match);
+                        }
+                        // Start new group
+                        current = Some(m.clone());
+                        overlapping = vec![m];
                     }
                 }
             }
         }
 
-        if let Some(m) = current {
-            resolved.push(m);
+        // Resolve final group
+        if !overlapping.is_empty() {
+            if let Some(best_match) = self.find_highest_priority_match(&overlapping, highlighter) {
+                resolved.push(best_match);
+            }
         }
 
         resolved
+    }
+
+    fn find_highest_priority_match(&self, matches: &[Match], highlighter: &MessageHighlighter) -> Option<Match> {
+        matches.iter().max_by_key(|m| {
+            match m.color {
+                c if c == highlighter.red_rule.color => 2,  // Red has highest priority
+                c if c == highlighter.green_rule.color => 1, // Green has second priority
+                _ => 0  // Others have lowest priority
+            }
+        }).cloned()
     }
 
     fn is_complete_match(&self, pos: usize, word_len: usize) -> bool {
