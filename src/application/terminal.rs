@@ -1,9 +1,9 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::thread;
 use crossterm::event::{self, Event, KeyCode, KeyModifiers};
-use crossterm::terminal::{Clear, ClearType};
 use crossterm::execute;
+use crossterm::terminal::{Clear, ClearType};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
 
 pub trait TerminalControl {
     fn start(&self);
@@ -25,9 +25,9 @@ impl TerminalController {
 impl TerminalControl for TerminalController {
     fn start(&self) {
         let running = self.running.clone();
-        
+
         println!("Press 'Q<CR>' to quit, 'Ctrl+L<CR>' to clear screen");
-        
+
         thread::spawn(move || {
             while running.load(Ordering::Relaxed) {
                 if let Ok(Event::Key(key)) = event::read() {
@@ -49,4 +49,4 @@ impl TerminalControl for TerminalController {
     fn is_running(&self) -> bool {
         self.running.load(Ordering::Relaxed)
     }
-} 
+}

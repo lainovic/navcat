@@ -11,15 +11,14 @@ use application::file_processor::process_file;
 use application::terminal::{TerminalControl, TerminalController};
 use domain::filter::LogFilter;
 use domain::filter_config::FilterConfig;
-use shared::logger::{Logger, LogLevel};
+use shared::logger::{LogLevel, Logger};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
     let config = FilterConfig::parse(&args);
-    let filter = LogFilter::new(config);
 
     // Set log level
-    let level = match args.log_level.to_lowercase().as_str() {
+    let level = match args.verbosity_level.to_lowercase().as_str() {
         "error" => LogLevel::Error,
         "info" => LogLevel::Info,
         "debug" => LogLevel::Debug,
@@ -28,18 +27,21 @@ fn main() -> Result<(), Box<dyn Error>> {
     Logger::set_level(level);
 
     Logger::info("Starting with:");
-    Logger::info_fmt("-> Levels: {:?}", &[&filter.levels]);
-    Logger::info_fmt("-> Tags: {:?}", &[&filter.tags.all_tags]);
-    Logger::info_fmt("-> Blacklisted items: {:?}", &[&filter.blacklisted_items]);
+    Logger::info_fmt("Levels:", &[&config.levels]);
+    Logger::info_fmt("Tags:", &[&config.tags.all_tags]);
+    Logger::info_fmt("Blacklisted items:", &[&config.blacklisted_items]);
+    Logger::info_fmt("Highlighted items:", &[&config.highlighted_items]);
+    Logger::info_fmt("Show items:", &[&config.show_items]);
 
+    let filter = LogFilter::new(config);
 
     match args.file {
         Some(file_path) => {
-            println!("Reading from file: {}", file_path);
+            Logger::info_fmt("Reading from file:", &[&file_path]);
             process_file(&file_path, filter)
         }
         None => {
-            println!("Running in live mode.");
+            Logger::info("Running in live mode.");
             check_adb_available()?;
             check_device_connected()?;
 

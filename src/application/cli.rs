@@ -12,27 +12,26 @@ pub struct Args {
     pub logcat_levels: String,
 
     /// Tags to show (comma-separated)
-    #[arg(short, long, default_value = "\
+    #[arg(
+        short,
+        long,
+        default_value = "\
         DefaultTomTomNavigation,\
         DistanceAlongRouteCalculator,\
-        LocationContextProvidingStep,\
-        NavigationHistoryStep,\
-        RouteProjectionStep,\
-        LocationMatchingStep,\
         ProgressCalculationStep,\
         RouteTrackingStateStep,\
         WaypointStatusCheckStep,\
         DestinationArrivalCheckStep,\
-        GuidanceGenerationStep,\
-        LaneGuidanceGenerationStep,\
-        WarningGenerationStep,\
-        RouteReplanningStep,\
         DefaultRouteTrackingEngine,\
         DefaultRouteProgressEngine,\
         Replan,\
+        Warning,\
+        Guidance,\
         Planner,\
-        Matcher\
-    ")]
+        Match,\
+        Project\
+    "
+    )]
     pub tags: String,
 
     /// Show guidance messages
@@ -43,13 +42,19 @@ pub struct Args {
     #[arg(short, long)]
     pub routing: bool,
 
-
     /// Show map-matching messages
     #[arg(short, long)]
     pub mapmatching: bool,
 
-    /// Set logging level (error, info, debug)
+    /// Set verbosity level (error, info, debug)
     #[arg(short = 'v', long, default_value = "none")]
-    pub log_level: String,
-}
+    pub verbosity_level: String,
 
+    /// Comma-separated list of items to highlight in the output
+    #[arg(short = 'i', long, default_value = "", allow_hyphen_values = true)]
+    pub highlighted_items: String,
+
+    /// Comma-separated list of items to show in the output. Only entries containing these items will be displayed
+    #[arg(short = 's', long, default_value = "", allow_hyphen_values = true)]
+    pub show_items: String,
+}

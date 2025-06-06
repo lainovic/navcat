@@ -1,5 +1,5 @@
-use std::sync::Mutex;
 use lazy_static::lazy_static;
+use std::sync::Mutex;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LogLevel {
@@ -32,7 +32,7 @@ impl Logger {
     pub fn error(msg: &str) {
         if let Ok(logger) = LOGGER.lock() {
             if logger.level >= LogLevel::Error {
-                println!("--> ERROR: {}", msg);
+                println!("ERROR: {}", msg);
             }
         }
     }
@@ -40,7 +40,7 @@ impl Logger {
     pub fn info(msg: &str) {
         if let Ok(logger) = LOGGER.lock() {
             if logger.level >= LogLevel::Info {
-                println!("--> INFO: {}", msg);
+                println!("INFO: {}", msg);
             }
         }
     }
@@ -48,7 +48,7 @@ impl Logger {
     pub fn debug(msg: &str) {
         if let Ok(logger) = LOGGER.lock() {
             if logger.level >= LogLevel::Debug {
-                println!("--> DEBUG: {}", msg);
+                println!("DEBUG: {}", msg);
             }
         }
     }
@@ -57,10 +57,10 @@ impl Logger {
         if let Ok(logger) = LOGGER.lock() {
             if logger.level >= LogLevel::Error {
                 match args.len() {
-                    0 => println!("--> ERROR: {}", msg),
-                    1 => println!("--> ERROR: {}", format!("{:?}", args[0])),
-                    2 => println!("--> ERROR: {}", format!("{:?} {:?}", args[0], args[1])),
-                    _ => println!("--> ERROR: {}", msg),
+                    0 => println!("ERROR: {}", msg),
+                    1 => println!("ERROR: {}", format!("{} {:?}", msg, args[0])),
+                    2 => println!("ERROR: {}", format!("{} {:?} {:?}", msg, args[0], args[1])),
+                    _ => println!("ERROR: {}", msg),
                 }
             }
         }
@@ -70,10 +70,10 @@ impl Logger {
         if let Ok(logger) = LOGGER.lock() {
             if logger.level >= LogLevel::Info {
                 match args.len() {
-                    0 => println!("--> INFO: {}", msg),
-                    1 => println!("--> INFO: {}", format!("{:?}", args[0])),
-                    2 => println!("--> INFO: {}", format!("{:?} {:?}", args[0], args[1])),
-                    _ => println!("--> INFO: {}", msg),
+                    0 => println!("INFO: {}", msg),
+                    1 => println!("INFO: {}", format!("{} {:?}", msg, args[0])),
+                    2 => println!("INFO: {}", format!("{} {:?} {:?}", msg, args[0], args[1])),
+                    _ => println!("INFO: {}", msg),
                 }
             }
         }
@@ -83,12 +83,12 @@ impl Logger {
         if let Ok(logger) = LOGGER.lock() {
             if logger.level >= LogLevel::Debug {
                 match args.len() {
-                    0 => println!("--> DEBUG: {}", msg),
-                    1 => println!("--> DEBUG: {}", format!("{:?}", args[0])),
-                    2 => println!("--> DEBUG: {}", format!("{:?} {:?}", args[0], args[1])),
-                    _ => println!("--> DEBUG: {}", msg),
+                    0 => println!("DEBUG: {}", msg),
+                    1 => println!("DEBUG: {}", format!("{} {:?}", msg, args[0])),
+                    2 => println!("DEBUG: {}", format!("{} {:?} {:?}", msg, args[0], args[1])),
+                    _ => println!("DEBUG: {}", msg),
                 }
             }
         }
     }
-} 
+}

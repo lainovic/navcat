@@ -6,7 +6,9 @@ use crate::application::cli::Args;
 pub struct FilterConfig {
     pub levels: Vec<&'static str>,
     pub tags: TagCategories,
-    pub blacklisted_items: Vec<&'static str>,
+    pub blacklisted_items: Vec<String>,
+    pub highlighted_items: Vec<String>,
+    pub show_items: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -56,16 +58,18 @@ impl FilterConfig {
     pub fn parse(args: &Args) -> Self {
         let levels = Self::to_levels(&args.logcat_levels);
         let mut tags = Self::to_tags(&args.tags);
-        let mut blacklisted_terms = Vec::new();
+        let mut blacklisted_items = Vec::new();
+        let mut highlighted_items = Vec::new();
+        let mut show_items = Vec::new();
 
         if !args.guidance {
             tags = tags
                 .into_iter()
                 .filter(|tag| !tag.contains("Guidance") && !tag.contains("Warning"))
                 .collect();
-            blacklisted_terms.push("guidance");
-            blacklisted_terms.push("instruction");
-            blacklisted_terms.push("warning");
+            blacklisted_items.push("guidance".to_string());
+            blacklisted_items.push("instruction".to_string());
+            blacklisted_items.push("warning".to_string());
         }
 
         if !args.routing {
@@ -73,21 +77,39 @@ impl FilterConfig {
                 .into_iter()
                 .filter(|tag| !tag.contains("Planner"))
                 .collect();
-            blacklisted_terms.push("planner");
+            // blacklisted_terms.push("planner");
         }
 
         if !args.mapmatching {
             tags = tags
                 .into_iter()
-                .filter(|tag| !tag.contains("Match"))
+                .filter(|tag| !tag.contains("Match") && !tag.contains("Project"))
                 .collect();
-            blacklisted_terms.push("match");
+            // blacklisted_terms.push("match");
+        }
+
+        if !args.highlighted_items.is_empty() {
+            highlighted_items = args
+                .highlighted_items
+                .split(",")
+                .map(|s| s.trim().to_string())
+                .collect()
+        }
+
+        if !args.show_items.is_empty() {
+            show_items = args
+                .show_items
+                .split(",")
+                .map(|s| s.trim().to_string())
+                .collect()
         }
 
         Self {
             levels,
             tags: TagCategories::new(tags),
-            blacklisted_items: blacklisted_terms,
+            blacklisted_items,
+            highlighted_items,
+            show_items,
         }
     }
 
