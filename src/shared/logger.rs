@@ -1,5 +1,5 @@
-use std::sync::Mutex;
 use lazy_static::lazy_static;
+use std::sync::Mutex;
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LogLevel {
@@ -91,4 +91,4 @@ impl Logger {
             }
         }
     }
-} 
+}

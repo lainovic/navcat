@@ -12,27 +12,26 @@ pub struct Args {
     pub logcat_levels: String,
 
     /// Tags to show (comma-separated)
-    #[arg(short, long, default_value = "\
+    #[arg(
+        short,
+        long,
+        default_value = "\
         DefaultTomTomNavigation,\
         DistanceAlongRouteCalculator,\
-        LocationContextProvidingStep,\
-        NavigationHistoryStep,\
-        RouteProjectionStep,\
-        LocationMatchingStep,\
         ProgressCalculationStep,\
         RouteTrackingStateStep,\
         WaypointStatusCheckStep,\
         DestinationArrivalCheckStep,\
-        GuidanceGenerationStep,\
-        LaneGuidanceGenerationStep,\
-        WarningGenerationStep,\
-        RouteReplanningStep,\
         DefaultRouteTrackingEngine,\
         DefaultRouteProgressEngine,\
         Replan,\
+        Warning,\
+        Guidance,\
         Planner,\
-        Matcher\
-    ")]
+        Match,\
+        Project\
+    "
+    )]
     pub tags: String,
 
     /// Show guidance messages
@@ -43,7 +42,6 @@ pub struct Args {
     #[arg(short, long)]
     pub routing: bool,
 
-
     /// Show map-matching messages
     #[arg(short, long)]
     pub mapmatching: bool,
@@ -52,4 +50,3 @@ pub struct Args {
     #[arg(short = 'v', long, default_value = "none")]
     pub log_level: String,
 }
-

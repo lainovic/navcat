@@ -11,7 +11,7 @@ use application::file_processor::process_file;
 use application::terminal::{TerminalControl, TerminalController};
 use domain::filter::LogFilter;
 use domain::filter_config::FilterConfig;
-use shared::logger::{Logger, LogLevel};
+use shared::logger::{LogLevel, Logger};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
@@ -31,7 +31,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     Logger::info_fmt("-> Levels: {:?}", &[&filter.levels]);
     Logger::info_fmt("-> Tags: {:?}", &[&filter.tags.all_tags]);
     Logger::info_fmt("-> Blacklisted items: {:?}", &[&filter.blacklisted_items]);
-
 
     match args.file {
         Some(file_path) => {

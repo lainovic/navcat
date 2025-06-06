@@ -73,15 +73,15 @@ impl FilterConfig {
                 .into_iter()
                 .filter(|tag| !tag.contains("Planner"))
                 .collect();
-            blacklisted_terms.push("planner");
+            // blacklisted_terms.push("planner");
         }
 
         if !args.mapmatching {
             tags = tags
                 .into_iter()
-                .filter(|tag| !tag.contains("Match"))
+                .filter(|tag| !tag.contains("Match") && !tag.contains("Project"))
                 .collect();
-            blacklisted_terms.push("match");
+            // blacklisted_terms.push("match");
         }
 
         Self {

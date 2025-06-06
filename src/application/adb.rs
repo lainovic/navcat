@@ -1,7 +1,7 @@
-use std::process::Command;
-use std::io::{BufRead, BufReader};
-use std::error::Error;
 use crate::domain::filter::LogFilter;
+use std::error::Error;
+use std::io::{BufRead, BufReader};
+use std::process::Command;
 
 use super::terminal::TerminalControl;
 
@@ -21,12 +21,10 @@ pub fn check_adb_available() -> Result<(), Box<dyn Error>> {
 
 pub fn check_device_connected() -> Result<(), Box<dyn Error>> {
     // Check if any device is connected
-    let output = Command::new("adb")
-        .arg("devices")
-        .output()?;
+    let output = Command::new("adb").arg("devices").output()?;
 
     let output_str = String::from_utf8_lossy(&output.stdout);
-    
+
     // Check if there's at least one device listed (excluding the header line)
     if output_str.lines().count() <= 1 {
         Err("No Android devices found. Please connect a device or start an emulator.".into())
@@ -35,7 +33,10 @@ pub fn check_device_connected() -> Result<(), Box<dyn Error>> {
     }
 }
 
-pub fn start_logcat(filter: LogFilter, terminal: &dyn TerminalControl) -> Result<(), Box<dyn Error>> {
+pub fn start_logcat(
+    filter: LogFilter,
+    terminal: &dyn TerminalControl,
+) -> Result<(), Box<dyn Error>> {
     // Start adb logcat process
     let mut child = Command::new("adb")
         .arg("logcat")
@@ -63,4 +64,4 @@ pub fn start_logcat(filter: LogFilter, terminal: &dyn TerminalControl) -> Result
     // Clean up
     child.kill()?;
     Ok(())
-} 
+}

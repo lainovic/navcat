@@ -42,21 +42,11 @@ impl LogFilter {
     }
 
     fn get_tag_color(&self, tag: &str) -> &'static str {
-        if self
-            .tags
-            .top_classes
-            .iter()
-            .any(|t| tag.contains(t))
-        {
+        if self.tags.top_classes.iter().any(|t| tag.contains(t)) {
             "\x1b[34m" // Blue for top classes
         } else if self.tags.steps.iter().any(|t| tag.contains(t)) {
             "\x1b[35m" // Magenta for steps
-        } else if self
-            .tags
-            .engines
-            .iter()
-            .any(|t| tag.contains(t))
-        {
+        } else if self.tags.engines.iter().any(|t| tag.contains(t)) {
             "\x1b[36m" // Cyan for engines
         } else {
             "\x1b[33m" // Yellow for other tags
@@ -70,7 +60,7 @@ impl LogFilter {
         }
 
         let line_lower = line.to_ascii_lowercase();
-        
+
         if self
             .blacklisted_items
             .iter()
@@ -139,17 +129,21 @@ impl LogFilter {
             LogFormat::FullWithMillis => (5, 6),
             LogFormat::Full => (4, 5),
             LogFormat::Short => (4, 5),
-        }
+        };
     }
 
     fn detect_format(parts: &Vec<&str>) -> LogFormat {
-        if parts[0].contains('-') && parts[0].len() == 10 { // YYYY-MM-DD
-            if parts[1].contains('.') { // HH:MM:SS.mmm +TZ
+        if parts[0].contains('-') && parts[0].len() == 10 {
+            // YYYY-MM-DD
+            if parts[1].contains('.') {
+                // HH:MM:SS.mmm +TZ
                 LogFormat::FullWithMillis
-            } else { // HH:MM:SS
+            } else {
+                // HH:MM:SS
                 LogFormat::Full
             }
-        } else { // MM-DD
+        } else {
+            // MM-DD
             LogFormat::Short
         }
     }

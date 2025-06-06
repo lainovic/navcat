@@ -1,9 +1,9 @@
+use crate::domain::filter::LogFilter;
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::Command;
 use tempfile::NamedTempFile;
-use crate::domain::filter::LogFilter;
 
 pub fn process_file(file_path: &str, filter: LogFilter) -> Result<(), Box<dyn Error>> {
     println!("Debug - Filter levels: {:?}", filter.levels);
@@ -15,7 +15,7 @@ pub fn process_file(file_path: &str, filter: LogFilter) -> Result<(), Box<dyn Er
 
     // Create a temporary file for the filtered output
     let mut temp_file = NamedTempFile::new()?;
-    
+
     // Process and write each line to the temp file
     for line in reader.lines() {
         if let Ok(line) = line {
@@ -48,4 +48,4 @@ pub fn process_file(file_path: &str, filter: LogFilter) -> Result<(), Box<dyn Er
     }
 
     Ok(())
-} 
+}
