@@ -54,9 +54,9 @@ navcat --help
 
 ### Default Tags
 
-The tool is pre-configured to filter for navigation-related tags:
+The tool is pre-configured to filter for tags:
 - DefaultTomTomNavigation
-- NavigationProcess
+- DistanceAlongRouteCalculator
 - LocationContextProvidingStep
 - NavigationHistoryStep
 - RouteProjectionStep
@@ -69,10 +69,13 @@ The tool is pre-configured to filter for navigation-related tags:
 - LaneGuidanceGenerationStep
 - WarningGenerationStep
 - RouteReplanningStep
-- DistanceAlongRouteCalculator
 - DefaultRouteTrackingEngine
 - DefaultRouteProgressEngine
-- RoutePlanner
+
+or to contain:
+- Replan
+- Planner
+- Matcher
 
 ## Requirements
 

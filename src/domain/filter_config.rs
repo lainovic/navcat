@@ -76,6 +76,14 @@ impl FilterConfig {
             blacklisted_terms.push("planner");
         }
 
+        if !args.mapmatching {
+            tags = tags
+                .into_iter()
+                .filter(|tag| !tag.contains("Match"))
+                .collect();
+            blacklisted_terms.push("match");
+        }
+
         Self {
             levels,
             tags: TagCategories::new(tags),

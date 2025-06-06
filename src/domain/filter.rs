@@ -5,6 +5,13 @@ use super::filter_config::FilterConfig;
 
 pub const RESET_COLOR: &str = "\x1b[0m";
 
+#[derive(Debug)]
+enum LogFormat {
+    FullWithMillis, // YYYY-MM-DD HH:MM:SS.mmm +TZ PID TID LEVEL TAG
+    Full,           // YYYY-MM-DD HH:MM:SS PID TID LEVEL TAG
+    Short,          // MM-DD HH:MM:SS PID TID LEVEL TAG
+}
+
 #[derive(Clone, Debug)]
 pub struct LogFilter {
     pub levels: Vec<&'static str>,
@@ -15,8 +22,8 @@ pub struct LogFilter {
 
 impl LogFilter {
     pub fn new(config: FilterConfig) -> Self {
-        Self { 
-            levels: config.levels, 
+        Self {
+            levels: config.levels,
             tags: config.tags,
             blacklisted_items: config.blacklisted_items,
             message_highlighter: MessageHighlighter::new(),
@@ -35,11 +42,21 @@ impl LogFilter {
     }
 
     fn get_tag_color(&self, tag: &str) -> &'static str {
-        if self.tags.top_classes.iter().any(|t| t.eq_ignore_ascii_case(tag)) {
+        if self
+            .tags
+            .top_classes
+            .iter()
+            .any(|t| tag.contains(t))
+        {
             "\x1b[34m" // Blue for top classes
-        } else if self.tags.steps.iter().any(|t| t.eq_ignore_ascii_case(tag)) {
+        } else if self.tags.steps.iter().any(|t| tag.contains(t)) {
             "\x1b[35m" // Magenta for steps
-        } else if self.tags.engines.iter().any(|t| t.eq_ignore_ascii_case(tag)) {
+        } else if self
+            .tags
+            .engines
+            .iter()
+            .any(|t| tag.contains(t))
+        {
             "\x1b[36m" // Cyan for engines
         } else {
             "\x1b[33m" // Yellow for other tags
@@ -53,31 +70,23 @@ impl LogFilter {
         }
 
         let line_lower = line.to_ascii_lowercase();
-        if self.blacklisted_items.iter().any(|word| line_lower.contains(word)) {
+        
+        if self
+            .blacklisted_items
+            .iter()
+            .any(|word| line_lower.contains(word))
+        {
             return None;
         }
 
-        // Parse the log line
         let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 5 {
+        if parts.is_empty() {
             return None;
         }
 
-        // Detect format and get level/tag indices
-        let (level_idx, tag_idx) = if parts[0].contains('-') && parts[0].len() == 10 {
-            // YYYY-MM-DD format
-            if parts[1].contains('.') {
-                // Has milliseconds and a time-zone
-                (5, 6) // Format: YYYY-MM-DD HH:MM:SS.mmm +TZ PID TID LEVEL TAG
-            } else {
-                (4, 5) // Format: YYYY-MM-DD HH:MM:SS PID TID LEVEL TAG
-            }
-        } else {
-            // MM-DD format
-            (4, 5) // Format: MM-DD HH:MM:SS PID TID LEVEL TAG
-        };
+        let (level_idx, tag_idx) = Self::get_level_and_tag_indices(&parts);
 
-        // Ensure we have enough parts for the detected format
+        // Ensure we have enough parts for the detected format.
         if parts.len() <= tag_idx {
             return None;
         }
@@ -123,6 +132,26 @@ impl LogFilter {
         }
 
         Some(colored_line.trim().to_string())
+    }
+
+    fn get_level_and_tag_indices(parts: &Vec<&str>) -> (usize, usize) {
+        return match Self::detect_format(&parts) {
+            LogFormat::FullWithMillis => (5, 6),
+            LogFormat::Full => (4, 5),
+            LogFormat::Short => (4, 5),
+        }
+    }
+
+    fn detect_format(parts: &Vec<&str>) -> LogFormat {
+        if parts[0].contains('-') && parts[0].len() == 10 { // YYYY-MM-DD
+            if parts[1].contains('.') { // HH:MM:SS.mmm +TZ
+                LogFormat::FullWithMillis
+            } else { // HH:MM:SS
+                LogFormat::Full
+            }
+        } else { // MM-DD
+            LogFormat::Short
+        }
     }
 
     pub fn add_highlight_word(&mut self, word: String, color: &'static str) {

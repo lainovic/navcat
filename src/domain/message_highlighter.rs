@@ -196,9 +196,11 @@ impl MessageHighlighter {
         let mut red_items = HashSet::new();
         red_items.insert("unfollowed".to_string());
         red_items.insert("not followed".to_string());
+        red_items.insert("unvisited".to_string());
         red_items.insert("deviation".to_string());
         red_items.insert("error".to_string());
         red_items.insert("warning".to_string());
+        red_items.insert("off-road".to_string());
 
         let red_rule = HighlightRule {
             terms: red_items,
@@ -207,9 +209,35 @@ impl MessageHighlighter {
 
         // Green highlights for positive messages/information
         let mut green_items = HashSet::new();
-        green_items.insert("followed".to_string());
-        green_items.insert("progress".to_string());
         green_items.insert("success".to_string());
+
+        // map-matcher
+        green_items.insert("match".to_string());
+        green_items.insert("matchlocation".to_string());
+
+        // tracking engine
+        green_items.insert("following".to_string());
+        green_items.insert("followed".to_string());
+        green_items.insert("visited".to_string());
+        
+        // progress engine
+        green_items.insert("segment".to_string());
+        green_items.insert("progress".to_string());
+        green_items.insert("current location".to_string());
+        
+        // replan actions
+        green_items.insert("should replan".to_string());
+        green_items.insert("refresh".to_string());
+        green_items.insert("back to route".to_string());
+        green_items.insert("continuous replanning".to_string());
+        green_items.insert("full replanning".to_string());
+        green_items.insert("language change".to_string());
+        green_items.insert("increment".to_string());
+
+        green_items.insert("updated".to_string());
+
+        // route planner
+        green_items.insert("planned".to_string());
         green_items.insert("planning route".to_string());
 
         let green_rule = HighlightRule {

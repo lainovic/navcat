@@ -14,7 +14,7 @@ pub struct Args {
     /// Tags to show (comma-separated)
     #[arg(short, long, default_value = "\
         DefaultTomTomNavigation,\
-        NavigationProcess,\
+        DistanceAlongRouteCalculator,\
         LocationContextProvidingStep,\
         NavigationHistoryStep,\
         RouteProjectionStep,\
@@ -27,10 +27,11 @@ pub struct Args {
         LaneGuidanceGenerationStep,\
         WarningGenerationStep,\
         RouteReplanningStep,\
-        DistanceAlongRouteCalculator,\
         DefaultRouteTrackingEngine,\
         DefaultRouteProgressEngine,\
-        RoutePlanner\
+        Replan,\
+        Planner,\
+        Matcher\
     ")]
     pub tags: String,
 
@@ -41,6 +42,11 @@ pub struct Args {
     /// Show routing messages
     #[arg(short, long)]
     pub routing: bool,
+
+
+    /// Show map-matching messages
+    #[arg(short, long)]
+    pub mapmatching: bool,
 
     /// Set logging level (error, info, debug)
     #[arg(short = 'v', long, default_value = "none")]
