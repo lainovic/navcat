@@ -132,8 +132,4 @@ impl LogFilter {
     pub fn remove_highlight_word(&mut self, word: &str) {
         self.message_highlighter.remove_highlight_word(word);
     }
-
-    pub fn set_verbose(&mut self, verbose: bool) {
-        self.message_highlighter.set_verbose(verbose);
-    }
 }

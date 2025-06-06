@@ -9,7 +9,7 @@ pub struct Args {
 
     /// Log levels to show (comma-separated, e.g. "I,D,E")
     #[arg(short, long, default_value = "I,D,E")]
-    pub levels: String,
+    pub logcat_levels: String,
 
     /// Tags to show (comma-separated)
     #[arg(short, long, default_value = "\
@@ -42,8 +42,8 @@ pub struct Args {
     #[arg(short, long)]
     pub routing: bool,
 
-    /// Enable debug/verbose logging
-    #[arg(short = 'd', long)]
-    pub debug: bool,
+    /// Set logging level (error, info, debug)
+    #[arg(short = 'v', long, default_value = "none")]
+    pub log_level: String,
 }
 

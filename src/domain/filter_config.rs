@@ -54,7 +54,7 @@ impl TagCategories {
 
 impl FilterConfig {
     pub fn parse(args: &Args) -> Self {
-        let levels = Self::to_levels(&args.levels);
+        let levels = Self::to_levels(&args.logcat_levels);
         let mut tags = Self::to_tags(&args.tags);
         let mut blacklisted_terms = Vec::new();
 

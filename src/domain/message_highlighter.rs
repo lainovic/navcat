@@ -1,35 +1,7 @@
 use std::collections::HashSet;
-use std::fmt;
 
 use crate::domain::filter::RESET_COLOR;
-
-#[derive(Debug, Clone)]
-struct Logger {
-    verbose: bool,
-}
-
-impl Logger {
-    fn new(verbose: bool) -> Self {
-        Self { verbose }
-    }
-
-    fn log(&self, msg: &str) {
-        if self.verbose {
-            println!("--> {}", msg);
-        }
-    }
-
-    fn log_fmt(&self, msg: &str, args: &[&dyn fmt::Display]) {
-        if self.verbose {
-            match args.len() {
-                0 => println!("--> {}", msg),
-                1 => println!("--> {}", format!("{}", args[0])),
-                2 => println!("--> {}", format!("{} {}", args[0], args[1])),
-                _ => println!("--> {}", msg),
-            }
-        }
-    }
-}
+use crate::shared::logger::Logger;
 
 #[derive(Debug, Clone)]
 struct HighlightRule {
@@ -55,7 +27,6 @@ pub struct MessageHighlighter {
     rules: Vec<HighlightRule>,
     red_rule: HighlightRule,
     green_rule: HighlightRule,
-    logger: Logger,
 }
 
 struct MessageProcessor<'a> {
@@ -74,30 +45,35 @@ impl<'a> MessageProcessor<'a> {
     fn find_matches(&self, highlighter: &MessageHighlighter) -> Vec<Match> {
         let mut matches = Vec::new();
         
-        highlighter.logger.log_fmt("Checking message: {}", &[&self.message_lower]);
+        Logger::debug_fmt("Checking message: {}", &[&self.message_lower]);
 
         // First check for exact phrases in red rules
         for term in &highlighter.red_rule.terms {
-            highlighter.logger.log_fmt("Checking red term: '{}'", &[term]);
             if let Some(pos) = self.message_lower.find(term) {
-                highlighter.logger.log_fmt("Found term at pos {}", &[&pos]);
+                Logger::debug_fmt("Found red term at pos {}", &[&pos]);
                 if self.is_complete_match(pos, term.len()) {
-                    highlighter.logger.log("Complete match!");
+                    Logger::debug("Complete match!");
                     matches.push(Match::new(pos, pos + term.len(), highlighter.red_rule.color));
                 } else {
-                    highlighter.logger.log("Not a complete match");
+                    Logger::debug("Not a complete match");
                 }
             } else {
-                highlighter.logger.log("Term not found");
+                Logger::debug("Term not found");
             }
         }
         
         // Then check for exact phrases in green rules
         for term in &highlighter.green_rule.terms {
             if let Some(pos) = self.message_lower.find(term) {
+                Logger::debug_fmt("Found green term at pos {}", &[&pos]);
                 if self.is_complete_match(pos, term.len()) {
+                    Logger::debug("Complete match!");
                     matches.push(Match::new(pos, pos + term.len(), highlighter.green_rule.color));
+                } else {
+                    Logger::debug("Not a complete match");
                 }
+            } else {
+                Logger::debug("Term not found");
             }
         }
         
@@ -105,9 +81,15 @@ impl<'a> MessageProcessor<'a> {
         for rule in &highlighter.rules {
             for term in &rule.terms {
                 if let Some(pos) = self.message_lower.find(term) {
+                    Logger::debug_fmt("Found custom term at pos {}", &[&pos]);
                     if self.is_complete_match(pos, term.len()) {
+                        Logger::debug("Complete match!");
                         matches.push(Match::new(pos, pos + term.len(), rule.color));
+                    } else {
+                        Logger::debug("Not a complete match");
                     }
+                } else {
+                    Logger::debug("Term not found");
                 }
             }
         }
@@ -239,12 +221,7 @@ impl MessageHighlighter {
             rules: Vec::new(),
             red_rule,
             green_rule,
-            logger: Logger::new(false),
         }
-    }
-
-    pub fn set_verbose(&mut self, verbose: bool) {
-        self.logger = Logger::new(verbose);
     }
 
     pub fn highlight_message(&self, message: &str) -> String {
