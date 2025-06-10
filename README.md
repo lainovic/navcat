@@ -103,7 +103,16 @@ navcat -grm
 
 ### Color Highlighting
 
-The tool uses different colors to highlight various types of messages:
+The tool uses different colors to highlight various types of messages. When multiple highlights could apply to the same text, the following priority order is used:
+
+> **Note on Highlight Priority**
+> 
+> 1. Red (Bold) - Highest priority
+> 2. Yellow - Second priority
+> 3. Green (Bold) - Third priority
+> 4. Custom highlights - Lowest priority
+> 
+> When multiple matches have the same priority, the last match in the sequence is used. This means that the order in which words are added to highlight rules can affect which highlight is applied when multiple words could match the same text.
 
 #### Log Levels
 - ERROR (E): Red

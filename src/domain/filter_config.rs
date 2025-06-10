@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use crate::application::cli::Args;
+use crate::domain::highlight_builder::HighlightBuilder;
 
 #[derive(Debug)]
 pub struct FilterConfig {
@@ -77,7 +78,6 @@ impl FilterConfig {
                 .into_iter()
                 .filter(|tag| !tag.contains("Planner"))
                 .collect();
-            // blacklisted_terms.push("planner");
         }
 
         if !args.mapmatching {
@@ -85,7 +85,6 @@ impl FilterConfig {
                 .into_iter()
                 .filter(|tag| !tag.contains("Match") && !tag.contains("Project"))
                 .collect();
-            // blacklisted_terms.push("match");
         }
 
         if !args.highlighted_items.is_empty() {
@@ -131,4 +130,56 @@ impl FilterConfig {
     fn to_tags(tags_str: &str) -> Vec<String> {
         return tags_str.split(',').map(|s| s.trim().to_string()).collect();
     }
+}
+
+pub fn create_default_highlighter() -> HighlightBuilder {
+    HighlightBuilder::new()
+        // Red highlights for warnings/errors/deviations
+        .add_red_words(&[
+            "error",
+            "old",
+            "removed",
+            "unfollowed",
+            "not followed",
+            "unvisited",
+            "deviation",
+            "off-road",
+        ])
+        // Green highlights for positive messages/information
+        .add_green_words(&[
+            "success",
+            "added",
+            "following",
+            "followed",
+            "visited",
+            "planned",
+        ])
+        // Yellow highlights for navigation and map matching events
+        .add_yellow_words(&[
+            "warning",
+            "updated",
+            "changed",
+            "segment",
+            "map matching",
+            "projected",
+            "matchlocation",
+            "matched",
+            "replan",
+            "should replan",
+            "refresh",
+            "back to route",
+            "replanning",
+            "language change",
+            "increment",
+            "progress",
+            "current location",
+            "distancealongroute",
+            "traffic jam",
+            "instruction",
+            "guidance",
+            "lane guidance",
+            "lane level guidance",
+            "route",
+            "planning route",
+        ])
 }

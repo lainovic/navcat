@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 
 use crate::domain::filter::RESET_COLOR;
+use crate::domain::highlight_builder::{RED_COLOR, GREEN_COLOR, YELLOW_COLOR, BG_YELLOW};
 use crate::shared::logger::Logger;
 
 #[derive(Debug, Clone)]
@@ -182,10 +183,10 @@ impl<'a> MessageProcessor<'a> {
             .iter()
             .max_by_key(|m| {
                 match m.color {
-                    c if c == highlighter.red_rule.color => 3, // Red has highest priority
+                    c if c == highlighter.red_rule.color => 3,    // Red has highest priority
                     c if c == highlighter.yellow_rule.color => 2, // Yellow has second priority
-                    c if c == highlighter.green_rule.color => 1, // Green has third priority
-                    _ => 0,                                    // Others have lowest priority
+                    c if c == highlighter.green_rule.color => 1,  // Green has third priority
+                    _ => 0,                                      // Others have lowest priority
                 }
             })
             .cloned()
@@ -233,96 +234,34 @@ impl<'a> MessageProcessor<'a> {
 }
 
 impl MessageHighlighter {
-    pub fn new(highlighted_items: Vec<String>) -> Self {
-        // Red highlights for warnings/errors/deviations
-        let mut red_items = HashSet::new();
-
-        red_items.insert("error".to_string());
-
-        red_items.insert("old".to_string());
-        red_items.insert("removed".to_string());
-
-        red_items.insert("unfollowed".to_string());
-        red_items.insert("not followed".to_string());
-        red_items.insert("unvisited".to_string());
-        red_items.insert("deviation".to_string());
-        red_items.insert("off-road".to_string());
-
+    pub fn new(
+        red_words: HashSet<String>,
+        green_words: HashSet<String>,
+        yellow_words: HashSet<String>,
+        custom_words: HashSet<String>,
+    ) -> Self {
         let red_rule = HighlightRule {
-            terms: red_items,
-            color: "\x1b[1;31m", // Bold Red
+            terms: red_words,
+            color: RED_COLOR,
         };
-
-        // Green highlights for positive messages/information
-        let mut green_items = HashSet::new();
-
-        green_items.insert("success".to_string());
-
-        green_items.insert("added".to_string());
-
-        // tracking engine
-        green_items.insert("following".to_string());
-        green_items.insert("followed".to_string());
-        green_items.insert("visited".to_string());
-
-        // route planner
-        green_items.insert("planned".to_string());
 
         let green_rule = HighlightRule {
-            terms: green_items,
-            color: "\x1b[1;32m", // Bold Green
+            terms: green_words,
+            color: GREEN_COLOR,
         };
-
-        // Yellow highlights for navigation and map matching events
-        let mut yellow_items = HashSet::new();
-
-        yellow_items.insert("warning".to_string());
-        yellow_items.insert("updated".to_string());
-        yellow_items.insert("changed".to_string());
-
-        yellow_items.insert("segment".to_string());
-
-        // map-matcher
-        yellow_items.insert("map matching".to_string());
-        yellow_items.insert("projected".to_string());
-        yellow_items.insert("matchlocation".to_string());
-        yellow_items.insert("matched".to_string());
-
-        // replan actions
-        yellow_items.insert("should replan".to_string());
-        yellow_items.insert("refresh".to_string());
-        yellow_items.insert("back to route".to_string());
-        yellow_items.insert("continuous replanning".to_string());
-        yellow_items.insert("full replanning".to_string());
-        yellow_items.insert("language change".to_string());
-        yellow_items.insert("increment".to_string());
-
-        // progress engine
-        yellow_items.insert("progress".to_string());
-        yellow_items.insert("current location".to_string());
-        yellow_items.insert("distancealongroute".to_string());
-
-        // guidance engine
-        yellow_items.insert("traffic jam".to_string());
-        yellow_items.insert("guidance".to_string());
-        yellow_items.insert("instruction".to_string());
-
-        // route planner
-        yellow_items.insert("planning route".to_string());
-        yellow_items.insert("route".to_string());
 
         let yellow_rule = HighlightRule {
-            terms: yellow_items,
-            color: "\x1b[33m", // Yellow
+            terms: yellow_words,
+            color: YELLOW_COLOR,
         };
 
-        let rule_for_highlights = HighlightRule {
-            terms: highlighted_items.into_iter().collect(),
-            color: "\x1b[43m", // Background Yellow
+        let custom_rule = HighlightRule {
+            terms: custom_words,
+            color: BG_YELLOW,
         };
 
         Self {
-            rules: vec![rule_for_highlights],
+            rules: vec![custom_rule],
             red_rule,
             yellow_rule,
             green_rule,
@@ -339,8 +278,9 @@ impl MessageHighlighter {
         let word_lower = word.to_lowercase();
 
         match color {
-            "\x1b[1;31m" => self.red_rule.terms.insert(word_lower),
-            "\x1b[1;32m" => self.green_rule.terms.insert(word_lower),
+            c if c == RED_COLOR => self.red_rule.terms.insert(word_lower),
+            c if c == GREEN_COLOR => self.green_rule.terms.insert(word_lower),
+            c if c == YELLOW_COLOR => self.yellow_rule.terms.insert(word_lower),
             _ => {
                 // Find or create a rule for other colors
                 if let Some(rule) = self.rules.iter_mut().find(|r| r.color == color) {
@@ -362,6 +302,7 @@ impl MessageHighlighter {
         let word_lower = word.to_lowercase();
         self.red_rule.terms.remove(&word_lower);
         self.green_rule.terms.remove(&word_lower);
+        self.yellow_rule.terms.remove(&word_lower);
         for rule in &mut self.rules {
             rule.terms.remove(&word_lower);
         }

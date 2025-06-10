@@ -1,5 +1,6 @@
 use crate::domain::filter_config::TagCategories;
 use crate::domain::message_highlighter::MessageHighlighter;
+use crate::domain::filter_config::create_default_highlighter;
 
 use super::filter_config::FilterConfig;
 
@@ -23,12 +24,19 @@ pub struct LogFilter {
 
 impl LogFilter {
     pub fn new(config: FilterConfig) -> Self {
+        let mut builder = create_default_highlighter();
+        
+        // Add any custom highlighted items from the config
+        if !config.highlighted_items.is_empty() {
+            builder = builder.add_custom_words(&config.highlighted_items.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+        }
+
         Self {
             levels: config.levels,
             tags: config.tags,
             blacklisted_items: config.blacklisted_items,
             show_items: config.show_items,
-            message_highlighter: MessageHighlighter::new(config.highlighted_items),
+            message_highlighter: builder.build(),
         }
     }
 
@@ -39,7 +47,7 @@ impl LogFilter {
             "I" => "\x1b[32m", // Green for INFO
             "D" => "\x1b[36m", // Cyan for DEBUG
             "T" => "\x1b[35m", // Magenta for TRACE
-            _ => "\x1b[0m",    // Default color for others
+            _ => RESET_COLOR,    // Default color for others
         }
     }
 
@@ -106,11 +114,6 @@ impl LogFilter {
         if !self.tags.contains_tag(line_tag) {
             return None;
         }
-
-        // // Check if any show_items match
-        // if !self.show_items.is_empty() && !self.show_items.iter().any(|word| line_lower.contains(word)) {
-        //     return None;
-        // }
 
         // Colorize.
         let mut colored_line = String::new();
