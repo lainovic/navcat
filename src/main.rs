@@ -11,20 +11,14 @@ use application::file_processor::process_file;
 use application::terminal::{TerminalControl, TerminalController};
 use domain::filter::LogFilter;
 use domain::filter_config::FilterConfig;
-use shared::logger::{LogLevel, Logger};
+use shared::logger::Logger;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
-    let config = FilterConfig::parse(&args);
 
-    // Set log level
-    let level = match args.verbosity_level.to_lowercase().as_str() {
-        "error" => LogLevel::Error,
-        "info" => LogLevel::Info,
-        "debug" => LogLevel::Debug,
-        _ => LogLevel::None,
-    };
-    Logger::set_level(level);
+    Logger::set_log_level(args.verbosity_level.clone());
+
+    let config = FilterConfig::parse(&args);
 
     Logger::info("Starting with:");
     Logger::info_fmt("Levels:", &[&config.levels]);

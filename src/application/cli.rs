@@ -34,6 +34,10 @@ pub struct Args {
     )]
     pub tags: String,
 
+    /// Add tags to the filter
+    #[arg(short = 'a', long, value_delimiter = ',')]
+    pub add_tag: Vec<String>,
+
     /// Show guidance messages
     #[arg(short, long)]
     pub guidance: bool,
@@ -46,7 +50,7 @@ pub struct Args {
     #[arg(short, long)]
     pub mapmatching: bool,
 
-    /// Set verbosity level (error, info, debug)
+    /// Set verbosity level (error/e, info/i, debug/d)
     #[arg(short = 'v', long, default_value = "none")]
     pub verbosity_level: String,
 

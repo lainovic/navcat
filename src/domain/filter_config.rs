@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::application::cli::Args;
-use crate::domain::highlight_builder::HighlightBuilder;
+use crate::shared::logger::Logger;
 
 #[derive(Debug)]
 pub struct FilterConfig {
@@ -51,7 +51,15 @@ impl TagCategories {
     }
 
     pub fn contains_tag(&self, tag: &str) -> bool {
-        self.all_tags.iter().any(|t| tag.contains(t))
+        let tag_lower = tag.to_lowercase();
+        Logger::debug_fmt("Checking tag:", &[&tag_lower]);
+        Logger::debug_fmt("Available tags:", &[&self.all_tags]);
+        let result = self
+            .all_tags
+            .iter()
+            .any(|t| tag_lower.contains(&t.to_lowercase()));
+        Logger::debug_fmt("Match result:", &[&result]);
+        result
     }
 }
 
@@ -63,6 +71,14 @@ impl FilterConfig {
         let mut highlighted_items = Vec::new();
         let mut show_items = Vec::new();
 
+        // Add any additional tags from the command line
+        for tag in &args.add_tag {
+            Logger::info_fmt("Adding tag:", &[&tag]);
+            tags.push(tag.clone());
+        }
+
+        Logger::debug_fmt("All tags before filtering:", &[&tags]);
+
         if !args.guidance {
             tags = tags
                 .into_iter()
@@ -73,6 +89,8 @@ impl FilterConfig {
             blacklisted_items.push("warning".to_string());
         }
 
+        Logger::debug_fmt("All tags after guidance filter:", &[&tags]);
+
         if !args.routing {
             tags = tags
                 .into_iter()
@@ -80,12 +98,16 @@ impl FilterConfig {
                 .collect();
         }
 
+        Logger::debug_fmt("All tags after routing filter:", &[&tags]);
+
         if !args.mapmatching {
             tags = tags
                 .into_iter()
                 .filter(|tag| !tag.contains("Match") && !tag.contains("Project"))
                 .collect();
         }
+
+        Logger::debug_fmt("Final tags:", &[&tags]);
 
         if !args.highlighted_items.is_empty() {
             highlighted_items = args
@@ -130,56 +152,4 @@ impl FilterConfig {
     fn to_tags(tags_str: &str) -> Vec<String> {
         return tags_str.split(',').map(|s| s.trim().to_string()).collect();
     }
-}
-
-pub fn create_default_highlighter() -> HighlightBuilder {
-    HighlightBuilder::new()
-        // Red highlights for warnings/errors/deviations
-        .add_red_words(&[
-            "error",
-            "old",
-            "removed",
-            "unfollowed",
-            "not followed",
-            "unvisited",
-            "deviation",
-            "off-road",
-        ])
-        // Green highlights for positive messages/information
-        .add_green_words(&[
-            "success",
-            "added",
-            "following",
-            "followed",
-            "visited",
-            "planned",
-        ])
-        // Yellow highlights for navigation and map matching events
-        .add_yellow_words(&[
-            "warning",
-            "updated",
-            "changed",
-            "segment",
-            "map matching",
-            "projected",
-            "matchlocation",
-            "matched",
-            "replan",
-            "should replan",
-            "refresh",
-            "back to route",
-            "replanning",
-            "language change",
-            "increment",
-            "progress",
-            "current location",
-            "distancealongroute",
-            "traffic jam",
-            "instruction",
-            "guidance",
-            "lane guidance",
-            "lane level guidance",
-            "route",
-            "planning route",
-        ])
 }

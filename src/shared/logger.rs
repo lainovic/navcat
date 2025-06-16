@@ -29,13 +29,23 @@ impl Logger {
         }
     }
 
-    pub fn error(msg: &str) {
-        if let Ok(logger) = LOGGER.lock() {
-            if logger.level >= LogLevel::Error {
-                println!("ERROR: {}", msg);
-            }
-        }
+    pub fn set_log_level(level: String) {
+        let level = match level.to_lowercase().as_str() {
+            "error" | "e" => LogLevel::Error,
+            "info" | "i" => LogLevel::Info,
+            "debug" | "d" => LogLevel::Debug,
+            _ => LogLevel::None,
+        };
+        Logger::set_level(level);
     }
+
+    // pub fn error(msg: &str) {
+    //     if let Ok(logger) = LOGGER.lock() {
+    //         if logger.level >= LogLevel::Error {
+    //             println!("ERROR: {}", msg);
+    //         }
+    //     }
+    // }
 
     pub fn info(msg: &str) {
         if let Ok(logger) = LOGGER.lock() {
@@ -53,18 +63,18 @@ impl Logger {
         }
     }
 
-    pub fn error_fmt(msg: &str, args: &[&dyn std::fmt::Debug]) {
-        if let Ok(logger) = LOGGER.lock() {
-            if logger.level >= LogLevel::Error {
-                match args.len() {
-                    0 => println!("ERROR: {}", msg),
-                    1 => println!("ERROR: {}", format!("{} {:?}", msg, args[0])),
-                    2 => println!("ERROR: {}", format!("{} {:?} {:?}", msg, args[0], args[1])),
-                    _ => println!("ERROR: {}", msg),
-                }
-            }
-        }
-    }
+    // pub fn error_fmt(msg: &str, args: &[&dyn std::fmt::Debug]) {
+    //     if let Ok(logger) = LOGGER.lock() {
+    //         if logger.level >= LogLevel::Error {
+    //             match args.len() {
+    //                 0 => println!("ERROR: {}", msg),
+    //                 1 => println!("ERROR: {}", format!("{} {:?}", msg, args[0])),
+    //                 2 => println!("ERROR: {}", format!("{} {:?} {:?}", msg, args[0], args[1])),
+    //                 _ => println!("ERROR: {}", msg),
+    //             }
+    //         }
+    //     }
+    // }
 
     pub fn info_fmt(msg: &str, args: &[&dyn std::fmt::Debug]) {
         if let Ok(logger) = LOGGER.lock() {

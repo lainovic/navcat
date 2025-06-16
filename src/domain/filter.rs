@@ -1,8 +1,7 @@
+use crate::domain::FilterConfig;
 use crate::domain::filter_config::TagCategories;
+use crate::domain::highlight_builder::create_default_highlighter;
 use crate::domain::message_highlighter::MessageHighlighter;
-use crate::domain::filter_config::create_default_highlighter;
-
-use super::filter_config::FilterConfig;
 
 pub const RESET_COLOR: &str = "\x1b[0m";
 
@@ -25,10 +24,16 @@ pub struct LogFilter {
 impl LogFilter {
     pub fn new(config: FilterConfig) -> Self {
         let mut builder = create_default_highlighter();
-        
+
         // Add any custom highlighted items from the config
         if !config.highlighted_items.is_empty() {
-            builder = builder.add_custom_words(&config.highlighted_items.iter().map(|s| s.as_str()).collect::<Vec<_>>());
+            builder = builder.add_custom_words(
+                &config
+                    .highlighted_items
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>(),
+            );
         }
 
         Self {
@@ -47,7 +52,7 @@ impl LogFilter {
             "I" => "\x1b[32m", // Green for INFO
             "D" => "\x1b[36m", // Cyan for DEBUG
             "T" => "\x1b[35m", // Magenta for TRACE
-            _ => RESET_COLOR,    // Default color for others
+            _ => RESET_COLOR,  // Default color for others
         }
     }
 
@@ -64,11 +69,9 @@ impl LogFilter {
     }
 
     pub fn matches(&self, line: &str) -> Option<String> {
-        // Skip empty lines
         if line.trim().is_empty() {
             return None;
         }
-
         let line_lower = line.to_ascii_lowercase();
 
         if !self.show_items.is_empty()
@@ -164,11 +167,12 @@ impl LogFilter {
         }
     }
 
-    pub fn add_highlight_word(&mut self, word: String, color: &'static str) {
-        self.message_highlighter.add_highlight_word(word, color);
-    }
+    // TODO: use or remove
+    // pub fn add_highlight_word(&mut self, word: String, color: &'static str) {
+    //     self.message_highlighter.add_highlight_word(word, color);
+    // }
 
-    pub fn remove_highlight_word(&mut self, word: &str) {
-        self.message_highlighter.remove_highlight_word(word);
-    }
+    // pub fn remove_highlight_word(&mut self, word: &str) {
+    //     self.message_highlighter.remove_highlight_word(word);
+    // }
 }

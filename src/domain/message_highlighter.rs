@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use crate::domain::filter::RESET_COLOR;
-use crate::domain::highlight_builder::{RED_COLOR, GREEN_COLOR, YELLOW_COLOR, BG_YELLOW};
+use crate::domain::highlight_builder::{BG_YELLOW, GREEN_COLOR, RED_COLOR, YELLOW_COLOR};
 use crate::shared::logger::Logger;
 
 #[derive(Debug, Clone)]
@@ -183,10 +183,10 @@ impl<'a> MessageProcessor<'a> {
             .iter()
             .max_by_key(|m| {
                 match m.color {
-                    c if c == highlighter.red_rule.color => 3,    // Red has highest priority
+                    c if c == highlighter.red_rule.color => 3, // Red has highest priority
                     c if c == highlighter.yellow_rule.color => 2, // Yellow has second priority
-                    c if c == highlighter.green_rule.color => 1,  // Green has third priority
-                    _ => 0,                                      // Others have lowest priority
+                    c if c == highlighter.green_rule.color => 1, // Green has third priority
+                    _ => 4, // custom colors have the higest priority
                 }
             })
             .cloned()
@@ -274,37 +274,38 @@ impl MessageHighlighter {
         processor.build_highlighted(matches)
     }
 
-    pub fn add_highlight_word(&mut self, word: String, color: &'static str) {
-        let word_lower = word.to_lowercase();
+    // TODO: use or remove
+    // pub fn add_highlight_word(&mut self, word: String, color: &'static str) {
+    //     let word_lower = word.to_lowercase();
 
-        match color {
-            c if c == RED_COLOR => self.red_rule.terms.insert(word_lower),
-            c if c == GREEN_COLOR => self.green_rule.terms.insert(word_lower),
-            c if c == YELLOW_COLOR => self.yellow_rule.terms.insert(word_lower),
-            _ => {
-                // Find or create a rule for other colors
-                if let Some(rule) = self.rules.iter_mut().find(|r| r.color == color) {
-                    rule.terms.insert(word_lower)
-                } else {
-                    let mut words = HashSet::new();
-                    words.insert(word_lower);
-                    self.rules.push(HighlightRule {
-                        terms: words,
-                        color,
-                    });
-                    true
-                }
-            }
-        };
-    }
+    //     match color {
+    //         c if c == RED_COLOR => self.red_rule.terms.insert(word_lower),
+    //         c if c == GREEN_COLOR => self.green_rule.terms.insert(word_lower),
+    //         c if c == YELLOW_COLOR => self.yellow_rule.terms.insert(word_lower),
+    //         _ => {
+    //             // Find or create a rule for other colors
+    //             if let Some(rule) = self.rules.iter_mut().find(|r| r.color == color) {
+    //                 rule.terms.insert(word_lower)
+    //             } else {
+    //                 let mut words = HashSet::new();
+    //                 words.insert(word_lower);
+    //                 self.rules.push(HighlightRule {
+    //                     terms: words,
+    //                     color,
+    //                 });
+    //                 true
+    //             }
+    //         }
+    //     };
+    // }
 
-    pub fn remove_highlight_word(&mut self, word: &str) {
-        let word_lower = word.to_lowercase();
-        self.red_rule.terms.remove(&word_lower);
-        self.green_rule.terms.remove(&word_lower);
-        self.yellow_rule.terms.remove(&word_lower);
-        for rule in &mut self.rules {
-            rule.terms.remove(&word_lower);
-        }
-    }
+    // pub fn remove_highlight_word(&mut self, word: &str) {
+    //     let word_lower = word.to_lowercase();
+    //     self.red_rule.terms.remove(&word_lower);
+    //     self.green_rule.terms.remove(&word_lower);
+    //     self.yellow_rule.terms.remove(&word_lower);
+    //     for rule in &mut self.rules {
+    //         rule.terms.remove(&word_lower);
+    //     }
+    // }
 }
