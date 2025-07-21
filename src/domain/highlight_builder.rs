@@ -73,6 +73,7 @@ pub fn create_default_highlighter() -> HighlightBuilder {
             "unvisited",
             "deviation",
             "off-road",
+            "off-route",
         ])
         // Green highlights for positive messages/information
         .add_green_words(&[

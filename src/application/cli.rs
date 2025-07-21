@@ -34,7 +34,7 @@ pub struct Args {
     )]
     pub tags: String,
 
-    /// Add tags to the filter
+    /// Add tags to the already defined list of tags
     #[arg(short = 'a', long, value_delimiter = ',')]
     pub add_tag: Vec<String>,
 
