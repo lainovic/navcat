@@ -115,7 +115,7 @@ impl LogFilter {
 
         // Check if any tag matches, if tags are set.
         let line_tag = parts[tag_idx].trim_end_matches(':');
-        if !self.tags.contains_tag(line_tag) {
+        if !self.tags.all_tags.is_empty() && !self.tags.contains_tag(line_tag) {
             return None;
         }
 

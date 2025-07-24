@@ -1,7 +1,33 @@
 use clap::Parser;
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
+#[command(author, version, about,
+    long_about = r#"A tool for processing Android logcat output that highlights navigation-related log entries and provides filtering and highlighting capabilities.
+
+EXAMPLES:
+  # Live mode with default settings
+  navcat
+
+  # Process a log file
+  navcat -f logcat.txt
+
+  # Show only error and warning levels
+  navcat -l "E,W"
+
+  # Add custom tags
+  navcat -a RouteDispatcher,LocationService
+
+  # Show only entries containing 'error'
+  navcat -s error
+
+  # Highlight specific terms
+  navcat -i "deviation,warning"
+
+  # Disable tag filtering to see all tags
+  navcat --no-tag-filter
+
+  # Enable additional message types
+  navcat --guidance --routing --mapmatching"#)]
 pub struct Args {
     /// Path to logcat file (if not provided, runs in live mode)
     #[arg(short, long)]
@@ -34,19 +60,23 @@ pub struct Args {
     )]
     pub tags: String,
 
-    /// Add tags to the already defined list of tags
+    /// Additional tags to include beyond the default tag list
     #[arg(short = 'a', long, value_delimiter = ',')]
     pub add_tag: Vec<String>,
 
-    /// Show guidance messages
+    /// Disable tag filtering to show all tags
+    #[arg(short, long)]
+    pub no_tag_filter: bool,
+
+    /// Display guidance-related log messages as well
     #[arg(short, long)]
     pub guidance: bool,
 
-    /// Show routing messages
+    /// Display route planning and calculation messages as well
     #[arg(short, long)]
     pub routing: bool,
 
-    /// Show map-matching messages
+    /// Display map-matching and location projection messages as well
     #[arg(short, long)]
     pub mapmatching: bool,
 
