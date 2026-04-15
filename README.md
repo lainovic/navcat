@@ -40,11 +40,11 @@ navcat -f logcat.txt
 # Filter specific log levels
 navcat -l I,D,E
 
-# Show only guidance messages
-navcat -g
+# Hide guidance messages
+navcat --no-guidance
 
-# Show only routing messages
-navcat -r
+# Hide routing messages
+navcat --no-routing
 
 # Set verbosity level
 navcat -v debug  # Options: none, error, info, debug
@@ -73,32 +73,29 @@ or anything that contains:
 - Match
 - Project
 
-depending on the input options, e.g. if flags for including map-matching, guidance, or routing messages are supplied.
+All categories are shown by default. Use opt-out flags to reduce noise.
 
 ### Filtering Options
 
-The tool provides several flags to control which messages are shown:
+The tool provides opt-out flags to hide specific message categories:
 
-- `-g` or `--guidance`: Show guidance and warning messages
-  - When disabled, filters out tags containing "Guidance" or "Warning"
+- `--no-guidance`: Hide guidance and warning messages
+  - Filters out tags containing "Guidance" or "Warning"
   - Also blacklists messages containing "guidance", "instruction", or "warning"
 
-- `-r` or `--routing`: Show routing messages
-  - When disabled, filters out tags containing "Planner"
+- `--no-routing`: Hide route planning and calculation messages
+  - Filters out tags containing "Planner"
 
-- `-m` or `--mapmatching`: Show map-matching messages
-  - When disabled, filters out tags containing "Match" or "Project"
+- `--no-mapmatching`: Hide map-matching and location projection messages
+  - Filters out tags containing "Match" or "Project"
 
-These flags can be combined to show only the messages you're interested in. For example:
+These flags can be combined to focus on specific areas:
 ```bash
-# Show only guidance messages
-navcat -g
+# Show only core navigation (hide everything else)
+navcat --no-guidance --no-routing --no-mapmatching
 
-# Show guidance and routing messages
-navcat -gr
-
-# Show guidance and routing and map-matching messages
-navcat -grm
+# Show everything except guidance noise
+navcat --no-guidance
 ```
 
 ### Color Highlighting

@@ -1,5 +1,17 @@
 use clap::Parser;
 
+#[derive(Debug, Clone, clap::ValueEnum)]
+pub enum VerbosityLevel {
+    #[value(alias = "n")]
+    None,
+    #[value(alias = "e")]
+    Error,
+    #[value(alias = "i")]
+    Info,
+    #[value(alias = "d")]
+    Debug,
+}
+
 #[derive(Parser, Debug)]
 #[command(author, version, about,
     long_about = r#"A tool for processing Android logcat output that highlights navigation-related log entries and provides filtering and highlighting capabilities.
@@ -26,14 +38,14 @@ EXAMPLES:
   # Disable tag filtering to see all tags
   navcat --no-tag-filter
 
-  # Enable additional message types
-  navcat --guidance --routing --mapmatching"#)]
+  # Hide specific message types
+  navcat --no-guidance --no-routing --no-mapmatching"#)]
 pub struct Args {
     /// Path to logcat file (if not provided, runs in live mode)
     #[arg(short, long)]
     pub file: Option<String>,
 
-    /// Log levels to show (comma-separated, e.g. "I,D,E")
+    /// Log levels to show, comma-separated (I/INFO, D/DEBUG, E/ERROR, W/WARN, T/TRACE)
     #[arg(short, long, default_value = "I,D,E")]
     pub logcat_levels: String,
 
@@ -68,27 +80,27 @@ pub struct Args {
     #[arg(short, long)]
     pub no_tag_filter: bool,
 
-    /// Display guidance-related log messages as well
-    #[arg(short, long)]
-    pub guidance: bool,
+    /// Hide guidance and warning messages
+    #[arg(long)]
+    pub no_guidance: bool,
 
-    /// Display route planning and calculation messages as well
-    #[arg(short, long)]
-    pub routing: bool,
+    /// Hide route planning and calculation messages
+    #[arg(long)]
+    pub no_routing: bool,
 
-    /// Display map-matching and location projection messages as well
-    #[arg(short, long)]
-    pub mapmatching: bool,
+    /// Hide map-matching and location projection messages
+    #[arg(long)]
+    pub no_mapmatching: bool,
 
-    /// Set verbosity level (error/e, info/i, debug/d)
+    /// Set verbosity level
     #[arg(short = 'v', long, default_value = "none")]
-    pub verbosity_level: String,
+    pub verbosity_level: VerbosityLevel,
 
-    /// Comma-separated list of items to highlight in the output
-    #[arg(short = 'i', long, default_value = "", allow_hyphen_values = true)]
-    pub highlighted_items: String,
+    /// Items to highlight in the output (comma-separated)
+    #[arg(short = 'i', long, value_delimiter = ',', allow_hyphen_values = true)]
+    pub highlighted_items: Vec<String>,
 
-    /// Comma-separated list of items to show in the output. Only entries containing these items will be displayed
-    #[arg(short = 's', long, default_value = "", allow_hyphen_values = true)]
-    pub show_items: String,
+    /// Items to show in the output (comma-separated); only entries containing these items will be displayed
+    #[arg(short = 's', long, value_delimiter = ',', allow_hyphen_values = true)]
+    pub show_items: Vec<String>,
 }

@@ -72,8 +72,6 @@ impl FilterConfig {
             Self::to_tags(&args.tags)
         };
         let mut blacklisted_items = Vec::new();
-        let mut highlighted_items = Vec::new();
-        let mut show_items = Vec::new();
 
         // Add any additional tags from the command line
         for tag in &args.add_tag {
@@ -83,7 +81,7 @@ impl FilterConfig {
 
         Logger::debug_fmt("All tags before filtering:", &[&tags]);
 
-        if !args.guidance {
+        if args.no_guidance {
             tags = tags
                 .into_iter()
                 .filter(|tag| !tag.contains("Guidance") && !tag.contains("Warning"))
@@ -95,7 +93,7 @@ impl FilterConfig {
 
         Logger::debug_fmt("All tags after guidance filter:", &[&tags]);
 
-        if !args.routing {
+        if args.no_routing {
             tags = tags
                 .into_iter()
                 .filter(|tag| !tag.contains("Planner"))
@@ -104,7 +102,7 @@ impl FilterConfig {
 
         Logger::debug_fmt("All tags after routing filter:", &[&tags]);
 
-        if !args.mapmatching {
+        if args.no_mapmatching {
             tags = tags
                 .into_iter()
                 .filter(|tag| !tag.contains("Match") && !tag.contains("Project"))
@@ -113,28 +111,12 @@ impl FilterConfig {
 
         Logger::debug_fmt("Final tags:", &[&tags]);
 
-        if !args.highlighted_items.is_empty() {
-            highlighted_items = args
-                .highlighted_items
-                .split(",")
-                .map(|s| s.trim().to_string())
-                .collect()
-        }
-
-        if !args.show_items.is_empty() {
-            show_items = args
-                .show_items
-                .split(",")
-                .map(|s| s.trim().to_string())
-                .collect()
-        }
-
         Self {
             levels,
             tags: TagCategories::new(tags),
             blacklisted_items,
-            highlighted_items,
-            show_items,
+            highlighted_items: args.highlighted_items.clone(),
+            show_items: args.show_items.clone(),
         }
     }
 

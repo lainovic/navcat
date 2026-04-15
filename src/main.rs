@@ -6,7 +6,7 @@ mod domain;
 mod shared;
 
 use application::adb::{check_adb_available, check_device_connected, start_logcat};
-use application::cli::Args;
+use application::cli::{Args, VerbosityLevel};
 use application::file_processor::process_file;
 use application::terminal::{TerminalControl, TerminalController};
 use domain::filter::LogFilter;
@@ -16,7 +16,12 @@ use shared::logger::Logger;
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
-    Logger::set_log_level(args.verbosity_level.clone());
+    Logger::set_level(match args.verbosity_level {
+        VerbosityLevel::None => shared::logger::LogLevel::None,
+        VerbosityLevel::Error => shared::logger::LogLevel::Error,
+        VerbosityLevel::Info => shared::logger::LogLevel::Info,
+        VerbosityLevel::Debug => shared::logger::LogLevel::Debug,
+    });
 
     let config = FilterConfig::parse(&args);
 

@@ -29,16 +29,6 @@ impl Logger {
         }
     }
 
-    pub fn set_log_level(level: String) {
-        let level = match level.to_lowercase().as_str() {
-            "error" | "e" => LogLevel::Error,
-            "info" | "i" => LogLevel::Info,
-            "debug" | "d" => LogLevel::Debug,
-            _ => LogLevel::None,
-        };
-        Logger::set_level(level);
-    }
-
     // pub fn error(msg: &str) {
     //     if let Ok(logger) = LOGGER.lock() {
     //         if logger.level >= LogLevel::Error {
