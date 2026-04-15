@@ -49,67 +49,49 @@ impl<'a> MessageProcessor<'a> {
 
         Logger::debug_fmt("Checking message: {}", &[&self.message_lower]);
 
-        // First check for exact phrases in red rules
+        // Check red rules
         for term in &highlighter.red_rule.terms {
-            if let Some(pos) = self.message_lower.find(term) {
+            for (pos, _) in self.message_lower.match_indices(term.as_str()) {
                 Logger::debug_fmt("Found red term at pos {}", &[&pos]);
                 if self.is_complete_match(pos, term.len()) {
                     Logger::debug("Complete match!");
-                    matches.push(Match::new(
-                        pos,
-                        pos + term.len(),
-                        highlighter.red_rule.color,
-                    ));
+                    matches.push(Match::new(pos, pos + term.len(), highlighter.red_rule.color));
                 } else {
                     Logger::debug("Not a complete match");
                 }
-            } else {
-                Logger::debug("Term not found");
             }
         }
 
-        // First check for exact phrases in yellow rules
+        // Check yellow rules
         for term in &highlighter.yellow_rule.terms {
-            if let Some(pos) = self.message_lower.find(term) {
+            for (pos, _) in self.message_lower.match_indices(term.as_str()) {
                 Logger::debug_fmt("Found yellow term at pos {}", &[&pos]);
                 if self.is_complete_match(pos, term.len()) {
                     Logger::debug("Complete match!");
-                    matches.push(Match::new(
-                        pos,
-                        pos + term.len(),
-                        highlighter.yellow_rule.color,
-                    ));
+                    matches.push(Match::new(pos, pos + term.len(), highlighter.yellow_rule.color));
                 } else {
                     Logger::debug("Not a complete match");
                 }
-            } else {
-                Logger::debug("Term not found");
             }
         }
 
-        // Then check for exact phrases in green rules
+        // Check green rules
         for term in &highlighter.green_rule.terms {
-            if let Some(pos) = self.message_lower.find(term) {
+            for (pos, _) in self.message_lower.match_indices(term.as_str()) {
                 Logger::debug_fmt("Found green term at pos {}", &[&pos]);
                 if self.is_complete_match(pos, term.len()) {
                     Logger::debug("Complete match!");
-                    matches.push(Match::new(
-                        pos,
-                        pos + term.len(),
-                        highlighter.green_rule.color,
-                    ));
+                    matches.push(Match::new(pos, pos + term.len(), highlighter.green_rule.color));
                 } else {
                     Logger::debug("Not a complete match");
                 }
-            } else {
-                Logger::debug("Term not found");
             }
         }
 
-        // Finally check other rules
+        // Check custom rules
         for rule in &highlighter.rules {
             for term in &rule.terms {
-                if let Some(pos) = self.message_lower.find(term) {
+                for (pos, _) in self.message_lower.match_indices(term.as_str()) {
                     Logger::debug_fmt("Found custom term at pos {}", &[&pos]);
                     if self.is_complete_match(pos, term.len()) {
                         Logger::debug("Complete match!");
@@ -117,8 +99,6 @@ impl<'a> MessageProcessor<'a> {
                     } else {
                         Logger::debug("Not a complete match");
                     }
-                } else {
-                    Logger::debug("Term not found");
                 }
             }
         }
@@ -183,10 +163,10 @@ impl<'a> MessageProcessor<'a> {
             .iter()
             .max_by_key(|m| {
                 match m.color {
-                    c if c == highlighter.red_rule.color => 3, // Red has highest priority
-                    c if c == highlighter.yellow_rule.color => 2, // Yellow has second priority
-                    c if c == highlighter.green_rule.color => 1, // Green has third priority
-                    _ => 4, // custom colors have the higest priority
+                    c if c == highlighter.red_rule.color => 3,    // Red: highest priority
+                    c if c == highlighter.yellow_rule.color => 2, // Yellow: second
+                    c if c == highlighter.green_rule.color => 1,  // Green: third
+                    _ => 0,                                        // Custom: lowest priority
                 }
             })
             .cloned()
@@ -197,13 +177,17 @@ impl<'a> MessageProcessor<'a> {
             c.is_whitespace() || c.is_ascii_punctuation() || c == '(' || c == ')' || c == '='
         };
 
-        // Check if match starts at word boundary
-        let starts_at_boundary =
-            pos == 0 || is_word_boundary(self.message_lower.as_bytes()[pos - 1] as char);
+        let starts_at_boundary = pos == 0
+            || self.message_lower[..pos]
+                .chars()
+                .next_back()
+                .map_or(true, is_word_boundary);
 
-        // Check if match ends at word boundary
         let ends_at_boundary = pos + word_len == self.message_lower.len()
-            || is_word_boundary(self.message_lower.as_bytes()[pos + word_len] as char);
+            || self.message_lower[pos + word_len..]
+                .chars()
+                .next()
+                .map_or(true, is_word_boundary);
 
         starts_at_boundary && ends_at_boundary
     }
