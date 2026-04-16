@@ -10,38 +10,41 @@ pub struct FilterConfig {
     pub blacklisted_items: Vec<String>,
     pub highlighted_items: Vec<String>,
     pub show_items: Vec<String>,
+    /// When true, empty tag list means "show all". When false, empty tag list means "show nothing".
+    pub no_tag_filter: bool,
 }
 
 #[derive(Debug, Clone)]
 pub struct TagCategories {
-    pub top_classes: Vec<String>,
-    pub steps: Vec<String>,
-    pub engines: Vec<String>,
+    pub routing_tags: Vec<String>,
+    pub mapmatching_tags: Vec<String>,
+    pub guidance_tags: Vec<String>,
     pub all_tags: HashSet<String>,
 }
 
 impl TagCategories {
     pub fn new(tags: Vec<String>) -> Self {
-        let mut top_classes = Vec::new();
-        let mut steps = Vec::new();
-        let mut engines = Vec::new();
+        let mut routing_tags = Vec::new();
+        let mut mapmatching_tags = Vec::new();
+        let mut guidance_tags = Vec::new();
         let mut all_tags = HashSet::new();
 
         for tag in tags {
             all_tags.insert(tag.clone());
-            if tag.contains("Step") {
-                steps.push(tag);
-            } else if tag.contains("Engine") {
-                engines.push(tag);
-            } else {
-                top_classes.push(tag);
+            if tag.contains("Planner") || tag.contains("Replan") {
+                routing_tags.push(tag);
+            } else if tag.contains("Match") || tag.contains("Project") {
+                mapmatching_tags.push(tag);
+            } else if tag.contains("Guidance") || tag.contains("Warning") {
+                guidance_tags.push(tag);
             }
+            // everything else is blue by default — no bucket needed
         }
 
         Self {
-            top_classes,
-            steps,
-            engines,
+            routing_tags,
+            mapmatching_tags,
+            guidance_tags,
             all_tags,
         }
     }
@@ -60,13 +63,16 @@ impl TagCategories {
 }
 
 /// Runtime-mutable filter state. Holds the immutable parts set from CLI args plus
-/// the three category toggles that can be flipped at runtime in the TUI.
+/// the four category toggles that can be flipped at runtime in the TUI.
 #[derive(Debug, Clone)]
 pub struct FilterState {
     pub levels: Vec<&'static str>,
     pub base_tags: Vec<String>,
     pub highlighted_items: Vec<String>,
     pub show_items: Vec<String>,
+    pub no_tag_filter: bool,
+    /// true = show core navigation messages (progress, tracking, waypoints, …)
+    pub navigation: bool,
     /// true = show guidance messages
     pub guidance: bool,
     /// true = show routing messages
@@ -94,6 +100,8 @@ impl FilterState {
             base_tags,
             highlighted_items: args.highlighted_items.clone(),
             show_items: args.show_items.clone(),
+            no_tag_filter: args.no_tag_filter,
+            navigation: true,
             guidance: true,
             routing: true,
             mapmatching: true,
@@ -101,22 +109,31 @@ impl FilterState {
     }
 
     pub fn to_filter_config(&self) -> FilterConfig {
-        let mut tags = self.base_tags.clone();
+        // Additive model: each toggle owns its tag bucket. Only include tags
+        // whose category is enabled, so the visible set is the union of
+        // whatever toggles are on.
+        let mut tags = Vec::new();
         let mut blacklisted_items = Vec::new();
 
+        for tag in &self.base_tags {
+            let enabled = if tag.contains("Guidance") || tag.contains("Warning") {
+                self.guidance
+            } else if tag.contains("Planner") {
+                self.routing
+            } else if tag.contains("Match") || tag.contains("Project") {
+                self.mapmatching
+            } else {
+                self.navigation
+            };
+            if enabled {
+                tags.push(tag.clone());
+            }
+        }
+
         if !self.guidance {
-            tags.retain(|tag| !tag.contains("Guidance") && !tag.contains("Warning"));
             blacklisted_items.push("guidance".to_string());
             blacklisted_items.push("instruction".to_string());
             blacklisted_items.push("warning".to_string());
-        }
-
-        if !self.routing {
-            tags.retain(|tag| !tag.contains("Planner"));
-        }
-
-        if !self.mapmatching {
-            tags.retain(|tag| !tag.contains("Match") && !tag.contains("Project"));
         }
 
         FilterConfig {
@@ -125,6 +142,7 @@ impl FilterState {
             blacklisted_items,
             highlighted_items: self.highlighted_items.clone(),
             show_items: self.show_items.clone(),
+            no_tag_filter: self.no_tag_filter,
         }
     }
 }

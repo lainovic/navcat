@@ -19,6 +19,7 @@ pub struct LogFilter {
     pub tags: TagCategories,
     pub blacklisted_items: Vec<String>,
     pub show_items: Vec<String>,
+    pub no_tag_filter: bool,
     message_highlighter: MessageHighlighter,
 }
 
@@ -42,6 +43,7 @@ impl LogFilter {
             tags: config.tags,
             blacklisted_items: config.blacklisted_items,
             show_items: config.show_items,
+            no_tag_filter: config.no_tag_filter,
             message_highlighter: builder.build(),
         }
     }
@@ -58,14 +60,14 @@ impl LogFilter {
     }
 
     fn get_tag_color(&self, tag: &str) -> &'static str {
-        if self.tags.top_classes.iter().any(|t| tag.contains(t)) {
-            "\x1b[34m" // Blue for top classes
-        } else if self.tags.steps.iter().any(|t| tag.contains(t)) {
-            "\x1b[35m" // Magenta for steps
-        } else if self.tags.engines.iter().any(|t| tag.contains(t)) {
-            "\x1b[36m" // Cyan for engines
+        if self.tags.routing_tags.iter().any(|t| tag.contains(t)) {
+            "\x1b[1;31m" // Bold red for routing (planners, replan)
+        } else if self.tags.mapmatching_tags.iter().any(|t| tag.contains(t)) {
+            "\x1b[33m" // Yellow for map-matching
+        } else if self.tags.guidance_tags.iter().any(|t| tag.contains(t)) {
+            "\x1b[35m" // Magenta for guidance
         } else {
-            "\x1b[1;31m" // Red for other tags
+            "\x1b[34m" // Blue for everything else
         }
     }
 
@@ -113,10 +115,13 @@ impl LogFilter {
             }
         }
 
-        // Check if any tag matches, if tags are set.
+        // Check tag filter. When no_tag_filter is set, empty tag list means "show all".
+        // Otherwise empty tag list means all category toggles are off → show nothing.
         let line_tag = parts[tag_idx].trim_end_matches(':');
-        if !self.tags.all_tags.is_empty() && !self.tags.contains_tag(line_tag) {
-            return None;
+        if !self.no_tag_filter {
+            if self.tags.all_tags.is_empty() || !self.tags.contains_tag(line_tag) {
+                return None;
+            }
         }
 
         // Colorize.
@@ -207,12 +212,15 @@ mod tests {
         blacklist: Vec<&'static str>,
         show: Vec<&'static str>,
     ) -> LogFilter {
+        let tag_strings: Vec<String> = tags.into_iter().map(String::from).collect();
+        let no_tag_filter = tag_strings.is_empty();
         LogFilter::new(FilterConfig {
             levels,
-            tags: TagCategories::new(tags.into_iter().map(String::from).collect()),
+            tags: TagCategories::new(tag_strings),
             blacklisted_items: blacklist.into_iter().map(String::from).collect(),
             highlighted_items: vec![],
             show_items: show.into_iter().map(String::from).collect(),
+            no_tag_filter,
         })
     }
 

@@ -1,10 +1,10 @@
 use std::io;
 use std::process::Child;
 use std::sync::mpsc::Receiver;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crossterm::{
-    event::{self, Event, KeyCode},
+    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
@@ -22,13 +22,21 @@ use crate::domain::filter_config::FilterState;
 
 const MAX_BUFFER: usize = 50_000;
 const TRIM_SIZE: usize = 10_000;
+const FLASH_MS: u64 = 350;
 
 pub struct AppState {
     raw_buffer: Vec<String>,
+    filtered_cache: Vec<String>,
     pub filter_state: FilterState,
     filter: LogFilter,
     scroll_offset: usize,
     follow: bool,
+    flash: Option<(Instant, char)>,
+    pub visible_height: usize,
+    show_hint: bool,
+    search_mode: bool,
+    search_query: String,
+    quit_pending: Option<Instant>,
 }
 
 impl AppState {
@@ -36,45 +44,116 @@ impl AppState {
         let filter = LogFilter::new(filter_state.to_filter_config());
         Self {
             raw_buffer: Vec::new(),
+            filtered_cache: Vec::new(),
             filter_state,
             filter,
             scroll_offset: 0,
             follow: true,
+            flash: None,
+            visible_height: 24,
+            show_hint: false,
+            search_mode: false,
+            search_query: String::new(),
+            quit_pending: None,
         }
     }
 
     fn rebuild_filter(&mut self) {
         self.filter = LogFilter::new(self.filter_state.to_filter_config());
+        self.filtered_cache = self.raw_buffer
+            .iter()
+            .filter_map(|line| self.filter.matches(line))
+            .collect();
+    }
+
+    fn set_flash(&mut self, key: char) {
+        self.flash = Some((Instant::now() + Duration::from_millis(FLASH_MS), key));
+    }
+
+    pub fn flash_active(&self) -> bool {
+        self.flash.map_or(false, |(until, _)| Instant::now() < until)
+    }
+
+    fn is_flashing(&self, key: char) -> bool {
+        self.flash
+            .map_or(false, |(until, k)| k == key && Instant::now() < until)
+    }
+
+    pub fn toggle_navigation(&mut self) {
+        self.filter_state.navigation = !self.filter_state.navigation;
+        self.rebuild_filter();
+        self.set_flash('n');
     }
 
     pub fn toggle_guidance(&mut self) {
         self.filter_state.guidance = !self.filter_state.guidance;
         self.rebuild_filter();
+        self.set_flash('g');
     }
 
     pub fn toggle_routing(&mut self) {
         self.filter_state.routing = !self.filter_state.routing;
         self.rebuild_filter();
+        self.set_flash('r');
     }
 
     pub fn toggle_mapmatching(&mut self) {
         self.filter_state.mapmatching = !self.filter_state.mapmatching;
         self.rebuild_filter();
+        self.set_flash('m');
+    }
+
+    pub fn toggle_hint(&mut self) {
+        self.show_hint = !self.show_hint;
+    }
+
+    pub fn enter_search(&mut self) {
+        self.search_mode = true;
+    }
+
+    pub fn exit_search(&mut self, clear: bool) {
+        self.search_mode = false;
+        if clear {
+            self.search_query.clear();
+        }
+    }
+
+    pub fn search_push(&mut self, c: char) {
+        self.search_query.push(c);
+        self.follow = true; // jump to latest match as query narrows
+    }
+
+    pub fn search_pop(&mut self) {
+        self.search_query.pop();
+        self.follow = true;
+    }
+
+    pub fn has_search(&self) -> bool {
+        !self.search_query.is_empty()
     }
 
     pub fn push_line(&mut self, line: String) {
+        if let Some(filtered) = self.filter.matches(&line) {
+            self.filtered_cache.push(filtered);
+        }
         self.raw_buffer.push(line);
         if self.raw_buffer.len() > MAX_BUFFER {
             self.raw_buffer.drain(..TRIM_SIZE);
             self.scroll_offset = self.scroll_offset.saturating_sub(TRIM_SIZE);
+            // Rebuild cache after trim since raw/filtered are now out of sync
+            self.filtered_cache = self.raw_buffer
+                .iter()
+                .filter_map(|l| self.filter.matches(l))
+                .collect();
         }
     }
 
-    pub fn filtered_lines(&self) -> Vec<String> {
-        self.raw_buffer
-            .iter()
-            .filter_map(|line| self.filter.matches(line))
-            .collect()
+    pub fn raw_count(&self) -> usize {
+        self.raw_buffer.len()
+    }
+
+    pub fn filtered_lines(&self) -> &[String] {
+        &self.filtered_cache
     }
 
     pub fn scroll_up(&mut self) {
@@ -85,6 +164,18 @@ impl AppState {
     pub fn scroll_down(&mut self) {
         self.follow = false;
         self.scroll_offset += 1; // clamped in render
+    }
+
+    pub fn scroll_page_up(&mut self) {
+        self.follow = false;
+        let step = (self.visible_height / 2).max(1);
+        self.scroll_offset = self.scroll_offset.saturating_sub(step);
+    }
+
+    pub fn scroll_page_down(&mut self) {
+        self.follow = false;
+        let step = (self.visible_height / 2).max(1);
+        self.scroll_offset += step; // clamped in render
     }
 
     pub fn resume_follow(&mut self) {
@@ -133,41 +224,126 @@ fn run_loop(
             dirty = true;
         }
 
+        // Keep redrawing while a toggle flash is in progress
+        if app.flash_active() {
+            dirty = true;
+        }
+
+        // Expire quit confirmation window
+        if let Some(deadline) = app.quit_pending {
+            if Instant::now() >= deadline {
+                app.quit_pending = None;
+                dirty = true;
+            } else {
+                dirty = true; // keep redrawing so status bar stays live
+            }
+        }
+
         if dirty {
+            // Update visible_height before render so page-scroll has correct size
+            if let Ok(size) = terminal.size() {
+                app.visible_height = (size.height as usize).saturating_sub(1);
+            }
             let filtered = app.filtered_lines();
-            terminal.draw(|frame| render(app, &filtered, frame))?;
+            terminal.draw(|frame| render(app, filtered, frame))?;
             dirty = false;
         }
 
         if event::poll(Duration::from_millis(16))? {
             if let Event::Key(key) = event::read()? {
-                match key.code {
-                    KeyCode::Char('q') => break,
-                    KeyCode::Char('g') => {
-                        app.toggle_guidance();
-                        dirty = true;
+                if app.search_mode {
+                    match key {
+                        KeyEvent { code: KeyCode::Esc, .. } => {
+                            app.exit_search(true);
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Enter, .. } => {
+                            app.exit_search(false);
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Backspace, .. } => {
+                            app.search_pop();
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Char(c), modifiers: KeyModifiers::NONE, .. }
+                        | KeyEvent { code: KeyCode::Char(c), modifiers: KeyModifiers::SHIFT, .. } => {
+                            app.search_push(c);
+                            dirty = true;
+                        }
+                        // Pass scroll keys through so you can browse while typing
+                        KeyEvent { code: KeyCode::PageUp, .. }
+                        | KeyEvent { code: KeyCode::Char('u'), modifiers: KeyModifiers::CONTROL, .. } => {
+                            app.scroll_page_up();
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::PageDown, .. }
+                        | KeyEvent { code: KeyCode::Char('d'), modifiers: KeyModifiers::CONTROL, .. } => {
+                            app.scroll_page_down();
+                            dirty = true;
+                        }
+                        _ => {}
                     }
-                    KeyCode::Char('r') => {
-                        app.toggle_routing();
-                        dirty = true;
+                } else {
+                    match key {
+                        KeyEvent { code: KeyCode::Char('q'), .. } => {
+                            if app.quit_pending.map_or(false, |d| Instant::now() < d) {
+                                break;
+                            }
+                            app.quit_pending = Some(Instant::now() + Duration::from_millis(1500));
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Char('/'), .. } => {
+                            app.enter_search();
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Esc, .. } if app.has_search() => {
+                            app.exit_search(true);
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Char('n'), .. } => {
+                            app.toggle_navigation();
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Char('g'), .. } => {
+                            app.toggle_guidance();
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Char('r'), .. } => {
+                            app.toggle_routing();
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Char('m'), .. } => {
+                            app.toggle_mapmatching();
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Char('?'), .. } => {
+                            app.toggle_hint();
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Up, .. } | KeyEvent { code: KeyCode::Char('k'), .. } => {
+                            app.scroll_up();
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Down, .. } | KeyEvent { code: KeyCode::Char('j'), .. } => {
+                            app.scroll_down();
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::PageUp, .. }
+                        | KeyEvent { code: KeyCode::Char('u'), modifiers: KeyModifiers::CONTROL, .. } => {
+                            app.scroll_page_up();
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::PageDown, .. }
+                        | KeyEvent { code: KeyCode::Char('d'), modifiers: KeyModifiers::CONTROL, .. } => {
+                            app.scroll_page_down();
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Char('f'), .. } | KeyEvent { code: KeyCode::End, .. } => {
+                            app.resume_follow();
+                            dirty = true;
+                        }
+                        _ => {}
                     }
-                    KeyCode::Char('m') => {
-                        app.toggle_mapmatching();
-                        dirty = true;
-                    }
-                    KeyCode::Up | KeyCode::Char('k') => {
-                        app.scroll_up();
-                        dirty = true;
-                    }
-                    KeyCode::Down | KeyCode::Char('j') => {
-                        app.scroll_down();
-                        dirty = true;
-                    }
-                    KeyCode::Char('f') | KeyCode::End => {
-                        app.resume_follow();
-                        dirty = true;
-                    }
-                    _ => {}
                 }
             }
         }
@@ -179,26 +355,52 @@ fn run_loop(
 fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
     let area = frame.area();
 
+    let constraints: Vec<Constraint> = if app.search_mode {
+        vec![Constraint::Min(1), Constraint::Length(1), Constraint::Length(1)]
+    } else {
+        vec![Constraint::Min(1), Constraint::Length(1)]
+    };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(1)])
+        .constraints(constraints)
         .split(area);
 
     let log_area = chunks[0];
-    let status_area = chunks[1];
+    let (search_area, status_area) = if app.search_mode {
+        (Some(chunks[1]), chunks[2])
+    } else {
+        (None, chunks[1])
+    };
     let height = log_area.height as usize;
 
-    let scroll_offset = if app.follow {
-        filtered.len().saturating_sub(height)
+    // Apply search on top of category filter
+    let search_q = app.search_query.to_lowercase();
+    let display: Vec<&String> = if search_q.is_empty() {
+        filtered.iter().collect()
     } else {
-        app.scroll_offset
-            .min(filtered.len().saturating_sub(1).max(0))
+        filtered
+            .iter()
+            .filter(|l| l.to_lowercase().contains(&search_q))
+            .collect()
     };
 
-    if filtered.is_empty() {
-        frame.render_widget(splash(), log_area);
+    let scroll_offset = if app.follow {
+        display.len().saturating_sub(height)
     } else {
-        let items: Vec<ListItem> = filtered
+        app.scroll_offset
+            .min(display.len().saturating_sub(1).max(0))
+    };
+
+    if display.is_empty() && app.raw_count() == 0 {
+        frame.render_widget(splash(), log_area);
+    } else if display.is_empty() {
+        let dim = Style::default().fg(Color::DarkGray);
+        let msg = Paragraph::new(Line::from(vec![
+            Span::styled("  no logs match current filters", dim),
+        ]));
+        frame.render_widget(msg, log_area);
+    } else {
+        let items: Vec<ListItem> = display
             .iter()
             .skip(scroll_offset)
             .take(height)
@@ -207,24 +409,113 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
         frame.render_widget(List::new(items), log_area);
     }
 
-    let g = if app.filter_state.guidance { "g:on " } else { "g:off" };
-    let r = if app.filter_state.routing { "r:on " } else { "r:off" };
-    let m = if app.filter_state.mapmatching { "m:on " } else { "m:off" };
-    let mode = if app.follow { "FOLLOW" } else { "LOCKED" };
-    let status = format!(
-        " [{} {} {}] │ {} lines │ {}  │  g/r/m:toggle  ↑↓ jk:scroll  f:follow  q:quit",
-        g,
-        r,
-        m,
-        filtered.len(),
-        mode
-    );
+    // Search bar
+    if let Some(area) = search_area {
+        let bar_style = Style::default().bg(Color::DarkGray).fg(Color::White);
+        let cursor_style = Style::default().bg(Color::White).fg(Color::DarkGray);
+        let search_line = Line::from(vec![
+            Span::styled(" / ", bar_style),
+            Span::styled(app.search_query.clone(), bar_style),
+            Span::styled("█", cursor_style),
+            Span::styled("  esc:clear  enter:lock", Style::default().bg(Color::DarkGray).fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+        ]);
+        frame.render_widget(Paragraph::new(search_line), area);
+    }
 
-    frame.render_widget(
-        Paragraph::new(status)
-            .style(Style::default().bg(Color::DarkGray).fg(Color::White)),
-        status_area,
-    );
+    let base_style = Style::default().bg(Color::DarkGray).fg(Color::White);
+    let off_style = Style::default().bg(Color::DarkGray).fg(Color::DarkGray).add_modifier(Modifier::BOLD);
+    let flash_style = Style::default().bg(Color::White).fg(Color::DarkGray).add_modifier(Modifier::BOLD);
+
+    // On-colors mirror tag colors: n=blue, g=magenta, r=bold red, m=yellow
+    let toggle_style = |on: bool, key: char| -> Style {
+        if app.is_flashing(key) {
+            return flash_style;
+        }
+        if !on {
+            return off_style;
+        }
+        match key {
+            'n' => Style::default().bg(Color::DarkGray).fg(Color::Blue),
+            'g' => Style::default().bg(Color::DarkGray).fg(Color::Magenta),
+            'r' => Style::default().bg(Color::DarkGray).fg(Color::Red).add_modifier(Modifier::BOLD),
+            'm' => Style::default().bg(Color::DarkGray).fg(Color::Yellow),
+            _   => Style::default().bg(Color::DarkGray).fg(Color::White),
+        }
+    };
+
+    let mode = if app.follow { "FOLLOW" } else { "PAUSED" };
+
+    let pos = if app.follow {
+        String::new()
+    } else {
+        let max_scroll = display.len().saturating_sub(height);
+        if max_scroll == 0 || scroll_offset == 0 {
+            " [top]".to_string()
+        } else if scroll_offset >= max_scroll {
+            " [bot]".to_string()
+        } else {
+            format!(" [{:2}%]", scroll_offset * 100 / max_scroll)
+        }
+    };
+
+    let search_indicator = if !app.search_mode && app.has_search() {
+        format!("  / \"{}\"", app.search_query)
+    } else {
+        String::new()
+    };
+
+    let quit_confirming = app.quit_pending.map_or(false, |d| Instant::now() < d);
+    let hint = if quit_confirming {
+        "  press q again to quit"
+    } else if app.show_hint {
+        "  n/g/r/m:toggle  /:search  ↑↓ jk:scroll  PgUp/Dn ^u/d:page  f:follow  q:quit  ?:hide"
+    } else {
+        "  ?"
+    };
+
+    let status_line = Line::from(vec![
+        Span::styled(" [", base_style),
+        Span::styled(
+            if app.filter_state.navigation { "n:on " } else { "n:off" },
+            toggle_style(app.filter_state.navigation, 'n'),
+        ),
+        Span::styled(" ", base_style),
+        Span::styled(
+            if app.filter_state.guidance { "g:on " } else { "g:off" },
+            toggle_style(app.filter_state.guidance, 'g'),
+        ),
+        Span::styled(" ", base_style),
+        Span::styled(
+            if app.filter_state.routing { "r:on " } else { "r:off" },
+            toggle_style(app.filter_state.routing, 'r'),
+        ),
+        Span::styled(" ", base_style),
+        Span::styled(
+            if app.filter_state.mapmatching { "m:on " } else { "m:off" },
+            toggle_style(app.filter_state.mapmatching, 'm'),
+        ),
+        Span::styled(
+            format!(
+                "] │ {} / {} │ {}{}{}",
+                display.len(),
+                app.raw_count(),
+                mode,
+                pos,
+                search_indicator,
+            ),
+            base_style,
+        ),
+        Span::styled(
+            hint,
+            if quit_confirming {
+                Style::default().bg(Color::Red).fg(Color::White).add_modifier(Modifier::BOLD)
+            } else {
+                base_style
+            },
+        ),
+    ]);
+
+    frame.render_widget(Paragraph::new(status_line), status_area);
 }
 
 fn splash() -> Paragraph<'static> {
@@ -241,7 +532,8 @@ fn splash() -> Paragraph<'static> {
         Line::from(vec![Span::styled(" > ^ <", red)]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("  g", key), Span::styled("  guidance    ", dim),
+            Span::styled("  n", key), Span::styled("  navigation  ", dim),
+            Span::styled("g", key),   Span::styled("  guidance   ", dim),
             Span::styled("r", key),   Span::styled("  routing    ", dim),
             Span::styled("m", key),   Span::styled("  map-matching", dim),
         ]),
@@ -249,6 +541,11 @@ fn splash() -> Paragraph<'static> {
             Span::styled("  ↑↓", key), Span::styled(" scroll      ", dim),
             Span::styled("f", key),    Span::styled("  follow     ", dim),
             Span::styled("q", key),    Span::styled("  quit", dim),
+        ]),
+        Line::from(vec![
+            Span::styled("  PgUp/Dn", key), Span::styled(" page        ", dim),
+            Span::styled("/", key),          Span::styled("  search     ", dim),
+            Span::styled("?", key),          Span::styled("  help", dim),
         ]),
         Line::from(""),
         Line::from(vec![Span::styled("  waiting for logs...", dim)]),
