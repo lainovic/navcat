@@ -115,6 +115,14 @@ impl AppState {
         self.rebuild_filter();
     }
 
+    pub fn clear_filters(&mut self) {
+        self.filter_state.navigation = false;
+        self.filter_state.guidance = false;
+        self.filter_state.routing = false;
+        self.filter_state.mapmatching = false;
+        self.rebuild_filter();
+    }
+
     pub fn dump_to_file(&self) -> Result<String, std::io::Error> {
         use std::io::Write;
         let filename = {
@@ -355,6 +363,10 @@ fn run_loop(
                             app.reset_filters();
                             dirty = true;
                         }
+                        KeyEvent { code: KeyCode::Char('-'), .. } => {
+                            app.clear_filters();
+                            dirty = true;
+                        }
                         KeyEvent { code: KeyCode::Char('n'), .. } => {
                             app.toggle_navigation();
                             dirty = true;
@@ -533,7 +545,7 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
     } else if quit_confirming {
         "  press q again to quit"
     } else if app.show_hint {
-        "  n/g/r/m:toggle  0:reset  w:save  /:search  ↑↓ jk:scroll  PgUp/Dn ^u/d:page  f:follow  q:quit  ?:hide"
+        "  n/g/r/m:toggle  0:all on  -:all off  w:save  /:search  ↑↓ jk:scroll  PgUp/Dn ^u/d:page  f:follow  q:quit  ?:hide"
     } else {
         "  ?"
     };
@@ -612,7 +624,8 @@ fn splash() -> Paragraph<'static> {
         Line::from(vec![
             Span::styled("  PgUp/Dn", key), Span::styled(" page        ", dim),
             Span::styled("/", key),          Span::styled("  search     ", dim),
-            Span::styled("0", key),          Span::styled("  reset      ", dim),
+            Span::styled("0", key),          Span::styled("  all on     ", dim),
+            Span::styled("-", key),          Span::styled("  all off    ", dim),
             Span::styled("?", key),          Span::styled("  help", dim),
         ]),
         Line::from(""),
