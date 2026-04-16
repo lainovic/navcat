@@ -109,9 +109,12 @@ impl FilterState {
     }
 
     pub fn to_filter_config(&self) -> FilterConfig {
-        // Additive model: each toggle owns its tag bucket. Only include tags
-        // whose category is enabled, so the visible set is the union of
-        // whatever toggles are on.
+        // Additive model: each toggle owns its tag bucket exclusively.
+        // Tags are assigned to exactly one category by pattern, and only
+        // tags in enabled categories are passed to the filter. This means
+        // the visible set is the union of enabled categories — all off
+        // produces an empty tag list, which the filter treats as "show nothing"
+        // (contrast with no_tag_filter=true, which means "show everything").
         let mut tags = Vec::new();
         let mut blacklisted_items = Vec::new();
 
@@ -148,10 +151,6 @@ impl FilterState {
 }
 
 impl FilterConfig {
-    pub fn parse(args: &Args) -> Self {
-        FilterState::from_args(args).to_filter_config()
-    }
-
     pub(crate) fn to_levels(levels_str: &str) -> Vec<&'static str> {
         levels_str
             .split(',')
