@@ -184,9 +184,10 @@ impl AppState {
 }
 
 pub fn run_tui(
-    mut child: Child,
-    receiver: Receiver<String>,
+    mut child: Option<Child>,
+    receiver: Option<Receiver<String>>,
     filter_state: FilterState,
+    preloaded: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -195,13 +196,23 @@ pub fn run_tui(
     let mut terminal = Terminal::new(backend)?;
 
     let mut app = AppState::new(filter_state);
+
+    if !preloaded.is_empty() {
+        for line in preloaded {
+            app.push_line(line);
+        }
+        app.follow = false; // start at top for file mode
+    }
+
     let result = run_loop(&mut terminal, &mut app, &receiver);
 
     // Always restore terminal, even on error
     let _ = disable_raw_mode();
     let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
     let _ = terminal.show_cursor();
-    let _ = child.kill();
+    if let Some(ref mut c) = child {
+        let _ = c.kill();
+    }
 
     result
 }
@@ -209,19 +220,21 @@ pub fn run_tui(
 fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut AppState,
-    receiver: &Receiver<String>,
+    receiver: &Option<Receiver<String>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut dirty = true;
 
     loop {
-        // Drain new lines from the adb thread
-        let mut received = false;
-        while let Ok(line) = receiver.try_recv() {
-            app.push_line(line);
-            received = true;
-        }
-        if received {
-            dirty = true;
+        // Drain new lines from the adb thread (live mode only)
+        if let Some(rx) = receiver {
+            let mut received = false;
+            while let Ok(line) = rx.try_recv() {
+                app.push_line(line);
+                received = true;
+            }
+            if received {
+                dirty = true;
+            }
         }
 
         // Keep redrawing while a toggle flash is in progress

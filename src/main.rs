@@ -1,5 +1,7 @@
 use clap::Parser;
 use std::error::Error;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 
 mod application;
 mod domain;
@@ -7,10 +9,8 @@ mod shared;
 
 use application::adb::{check_adb_available, check_device_connected, spawn_logcat};
 use application::cli::{Args, VerbosityLevel};
-use application::file_processor::process_file;
 use application::tui::run_tui;
-use domain::filter::LogFilter;
-use domain::filter_config::{FilterConfig, FilterState};
+use domain::filter_config::FilterState;
 use shared::logger::Logger;
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -23,11 +23,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         VerbosityLevel::Debug => shared::logger::LogLevel::Debug,
     });
 
+    let filter_state = FilterState::from_args(&args);
+
     match &args.file {
         Some(file_path) => {
-            let config = FilterConfig::parse(&args);
             Logger::info_fmt("Reading from file:", &[&file_path]);
-            process_file(file_path, LogFilter::new(config))
+            let lines: Vec<String> = BufReader::new(File::open(file_path)?)
+                .lines()
+                .map_while(Result::ok)
+                .collect();
+            run_tui(None, None, filter_state, lines)
         }
         None => {
             check_adb_available()?;
@@ -36,9 +41,8 @@ fn main() -> Result<(), Box<dyn Error>> {
             Logger::set_log_file("/tmp/navcat.log")
                 .unwrap_or_else(|e| eprintln!("Warning: could not open log file: {}", e));
 
-            let filter_state = FilterState::from_args(&args);
             let (child, receiver) = spawn_logcat()?;
-            run_tui(child, receiver, filter_state)
+            run_tui(Some(child), Some(receiver), filter_state, vec![])
         }
     }
 }
