@@ -10,9 +10,9 @@ use crossterm::{
 };
 use ratatui::{
     backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
-    text::{Line, Span},
+    text::{Line, Span, Text},
     widgets::{List, ListItem, Paragraph},
     Terminal,
 };
@@ -195,14 +195,17 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
             .min(filtered.len().saturating_sub(1).max(0))
     };
 
-    let items: Vec<ListItem> = filtered
-        .iter()
-        .skip(scroll_offset)
-        .take(height)
-        .map(|line| ListItem::new(ansi_to_line(line)))
-        .collect();
-
-    frame.render_widget(List::new(items), log_area);
+    if filtered.is_empty() {
+        frame.render_widget(splash(), log_area);
+    } else {
+        let items: Vec<ListItem> = filtered
+            .iter()
+            .skip(scroll_offset)
+            .take(height)
+            .map(|line| ListItem::new(ansi_to_line(line)))
+            .collect();
+        frame.render_widget(List::new(items), log_area);
+    }
 
     let g = if app.filter_state.guidance { "G:on " } else { "G:off" };
     let r = if app.filter_state.routing { "R:on " } else { "R:off" };
@@ -222,6 +225,23 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
             .style(Style::default().bg(Color::DarkGray).fg(Color::White)),
         status_area,
     );
+}
+
+fn splash() -> Paragraph<'static> {
+    let red = Style::default().fg(Color::Red);
+    let bold_white = Style::default().fg(Color::White).add_modifier(Modifier::BOLD);
+    let dim = Style::default().fg(Color::DarkGray);
+
+    let text = Text::from(vec![
+        Line::from(""),
+        Line::from(vec![Span::styled(" /\\_/\\  ", red), Span::styled("navcat", bold_white)]),
+        Line::from(vec![Span::styled("( o.o )  ", red), Span::styled("nav log inspector", dim)]),
+        Line::from(vec![Span::styled(" > ^ <", red)]),
+        Line::from(""),
+        Line::from(vec![Span::styled("  waiting for logs...", dim)]),
+    ]);
+
+    Paragraph::new(text).alignment(Alignment::Left)
 }
 
 /// Converts a string containing ANSI escape codes into a ratatui `Line` with
