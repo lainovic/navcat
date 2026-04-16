@@ -187,24 +187,33 @@ impl AppState {
         &self.filtered_cache
     }
 
+    fn leave_follow(&mut self) {
+        if self.follow {
+            // Sync to the actual bottom position before disabling follow,
+            // otherwise scroll_offset of 0 would jump the view to the top.
+            self.scroll_offset = self.filtered_cache.len().saturating_sub(self.visible_height);
+            self.follow = false;
+        }
+    }
+
     pub fn scroll_up(&mut self) {
-        self.follow = false;
+        self.leave_follow();
         self.scroll_offset = self.scroll_offset.saturating_sub(1);
     }
 
     pub fn scroll_down(&mut self) {
-        self.follow = false;
+        self.leave_follow();
         self.scroll_offset += 1; // clamped in render
     }
 
     pub fn scroll_page_up(&mut self) {
-        self.follow = false;
+        self.leave_follow();
         let step = (self.visible_height / 2).max(1);
         self.scroll_offset = self.scroll_offset.saturating_sub(step);
     }
 
     pub fn scroll_page_down(&mut self) {
-        self.follow = false;
+        self.leave_follow();
         let step = (self.visible_height / 2).max(1);
         self.scroll_offset += step; // clamped in render
     }
