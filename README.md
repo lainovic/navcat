@@ -77,6 +77,19 @@ Search (`/`) stacks on top of the category filters — e.g. routing-only logs na
 -v, --verbosity-level <LEVEL>  Logging verbosity: none/error/info/debug [default: none]
 ```
 
+## Shell Completion
+
+```bash
+mkdir -p ~/.zfunc
+navcat --completions zsh > ~/.zfunc/_navcat
+
+# Add to ~/.zshrc if not already there:
+# fpath=(~/.zfunc $fpath)
+# autoload -Uz compinit && compinit
+```
+
+After reloading your shell, `navcat -f <tab>` completes to `.txt` files only.
+
 ## Requirements
 
 - Rust 1.70+

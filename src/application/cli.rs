@@ -92,6 +92,6 @@ pub struct Args {
     pub show_items: Vec<String>,
 
     /// Print a shell completion script and exit (supports: zsh)
-    #[arg(long, hide = true)]
+    #[arg(long)]
     pub completions: Option<String>,
 }
