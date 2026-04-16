@@ -195,3 +195,165 @@ impl LogFilter {
         part.map(|p| p.chars().all(|c| c.is_ascii_digit())).unwrap_or(false)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::filter_config::{FilterConfig, TagCategories};
+
+    fn make_filter(
+        levels: Vec<&'static str>,
+        tags: Vec<&'static str>,
+        blacklist: Vec<&'static str>,
+        show: Vec<&'static str>,
+    ) -> LogFilter {
+        LogFilter::new(FilterConfig {
+            levels,
+            tags: TagCategories::new(tags.into_iter().map(String::from).collect()),
+            blacklisted_items: blacklist.into_iter().map(String::from).collect(),
+            highlighted_items: vec![],
+            show_items: show.into_iter().map(String::from).collect(),
+        })
+    }
+
+    // --- detect_format ---
+
+    #[test]
+    fn detect_full_with_pid_tid() {
+        // YYYY-MM-DD HH:MM:SS.mmm +TZ PID TID LEVEL TAG msg
+        let line = "2024-01-15 10:30:45.123 +0000 1234 5678 I SomeTag: message";
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        assert!(matches!(LogFilter::detect_format(&parts), Some(LogFormat::FullWithPidTid)));
+    }
+
+    #[test]
+    fn detect_full() {
+        // YYYY-MM-DD HH:MM:SS PID TID LEVEL TAG msg
+        let line = "2024-01-15 10:30:45 1234 5678 I SomeTag: message";
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        assert!(matches!(LogFilter::detect_format(&parts), Some(LogFormat::Full)));
+    }
+
+    #[test]
+    fn detect_short() {
+        // MM-DD HH:MM:SS.mmm PID TID LEVEL TAG msg
+        let line = "01-15 10:30:45.123 1234 5678 I SomeTag: message";
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        assert!(matches!(LogFilter::detect_format(&parts), Some(LogFormat::Short)));
+    }
+
+    #[test]
+    fn detect_compact() {
+        // YYYY-MM-DD HH:MM:SS.mmm+TZ LEVEL TAG: msg
+        let line = "2024-01-15 10:30:45.123+0000 I SomeTag: message";
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        assert!(matches!(LogFilter::detect_format(&parts), Some(LogFormat::Compact)));
+    }
+
+    #[test]
+    fn detect_too_few_parts_returns_none() {
+        let parts = vec!["2024-01-15"];
+        assert!(LogFilter::detect_format(&parts).is_none());
+    }
+
+    #[test]
+    fn detect_stacktrace_returns_none() {
+        let line = "at com.example.Foo.bar(Foo.kt:42)";
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        assert!(LogFilter::detect_format(&parts).is_none());
+    }
+
+    #[test]
+    fn detect_logcat_header_returns_none() {
+        let line = "--------- beginning of main";
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        assert!(LogFilter::detect_format(&parts).is_none());
+    }
+
+    // --- matches: level filtering ---
+
+    #[test]
+    fn matches_passes_correct_level() {
+        let filter = make_filter(vec!["I"], vec![], vec![], vec![]);
+        let line = "2024-01-15 10:30:45 1234 5678 I SomeTag: hello";
+        assert!(filter.matches(line).is_some());
+    }
+
+    #[test]
+    fn matches_rejects_wrong_level() {
+        let filter = make_filter(vec!["E"], vec![], vec![], vec![]);
+        let line = "2024-01-15 10:30:45 1234 5678 I SomeTag: hello";
+        assert!(filter.matches(line).is_none());
+    }
+
+    // --- matches: tag filtering ---
+
+    #[test]
+    fn matches_passes_matching_tag() {
+        let filter = make_filter(vec![], vec!["Navigation"], vec![], vec![]);
+        let line = "2024-01-15 10:30:45 1234 5678 I DefaultNavigation: hello";
+        assert!(filter.matches(line).is_some());
+    }
+
+    #[test]
+    fn matches_rejects_non_matching_tag() {
+        let filter = make_filter(vec![], vec!["Navigation"], vec![], vec![]);
+        let line = "2024-01-15 10:30:45 1234 5678 I SomeOtherTag: hello";
+        assert!(filter.matches(line).is_none());
+    }
+
+    #[test]
+    fn matches_passes_all_tags_when_tag_list_empty() {
+        let filter = make_filter(vec!["I"], vec![], vec![], vec![]);
+        let line = "2024-01-15 10:30:45 1234 5678 I AnythingAtAll: hello";
+        assert!(filter.matches(line).is_some());
+    }
+
+    // --- matches: blacklist ---
+
+    #[test]
+    fn matches_rejects_blacklisted_word() {
+        let filter = make_filter(vec![], vec![], vec!["guidance"], vec![]);
+        let line = "2024-01-15 10:30:45 1234 5678 I SomeTag: guidance update";
+        assert!(filter.matches(line).is_none());
+    }
+
+    #[test]
+    fn matches_blacklist_is_case_insensitive() {
+        let filter = make_filter(vec![], vec![], vec!["guidance"], vec![]);
+        let line = "2024-01-15 10:30:45 1234 5678 I SomeTag: GUIDANCE update";
+        assert!(filter.matches(line).is_none());
+    }
+
+    // --- matches: show-items ---
+
+    #[test]
+    fn matches_passes_line_containing_show_item() {
+        let filter = make_filter(vec![], vec![], vec![], vec!["replan"]);
+        let line = "2024-01-15 10:30:45 1234 5678 I SomeTag: replan triggered";
+        assert!(filter.matches(line).is_some());
+    }
+
+    #[test]
+    fn matches_rejects_line_missing_show_item() {
+        let filter = make_filter(vec![], vec![], vec![], vec!["replan"]);
+        let line = "2024-01-15 10:30:45 1234 5678 I SomeTag: normal progress update";
+        assert!(filter.matches(line).is_none());
+    }
+
+    // --- matches: misc ---
+
+    #[test]
+    fn matches_empty_line_returns_none() {
+        let filter = make_filter(vec![], vec![], vec![], vec![]);
+        assert!(filter.matches("").is_none());
+        assert!(filter.matches("   ").is_none());
+    }
+
+    #[test]
+    fn matches_unrecognized_format_returns_none() {
+        let filter = make_filter(vec![], vec![], vec![], vec![]);
+        assert!(filter.matches("at com.example.Foo.bar(Foo.kt:42)").is_none());
+        assert!(filter.matches("--------- beginning of main").is_none());
+    }
+}

@@ -258,3 +258,86 @@ impl MessageHighlighter {
         processor.build_highlighted(matches)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::highlight_builder::{BG_YELLOW, GREEN_COLOR, RED_COLOR, YELLOW_COLOR};
+
+    fn make_highlighter(
+        red: &[&str],
+        green: &[&str],
+        yellow: &[&str],
+        custom: &[&str],
+    ) -> MessageHighlighter {
+        let to_set = |words: &[&str]| words.iter().map(|w| w.to_lowercase()).collect();
+        MessageHighlighter::new(to_set(red), to_set(green), to_set(yellow), to_set(custom))
+    }
+
+    // --- priority ---
+
+    #[test]
+    fn red_beats_yellow_on_overlap() {
+        let h = make_highlighter(&["error"], &[], &["error"], &[]);
+        let result = h.highlight_message("error occurred");
+        assert!(result.contains(RED_COLOR));
+        assert!(!result.contains(YELLOW_COLOR));
+    }
+
+    #[test]
+    fn red_beats_green_on_overlap() {
+        let h = make_highlighter(&["started"], &["started"], &[], &[]);
+        let result = h.highlight_message("started successfully");
+        assert!(result.contains(RED_COLOR));
+        assert!(!result.contains(GREEN_COLOR));
+    }
+
+    #[test]
+    fn yellow_beats_green_on_overlap() {
+        let h = make_highlighter(&[], &["progress"], &["progress"], &[]);
+        let result = h.highlight_message("progress update");
+        assert!(result.contains(YELLOW_COLOR));
+        assert!(!result.contains(GREEN_COLOR));
+    }
+
+    #[test]
+    fn builtin_beats_custom_on_overlap() {
+        let h = make_highlighter(&["error"], &[], &[], &["error"]);
+        let result = h.highlight_message("error occurred");
+        assert!(result.contains(RED_COLOR));
+        assert!(!result.contains(BG_YELLOW));
+    }
+
+    // --- all occurrences ---
+
+    #[test]
+    fn all_occurrences_highlighted() {
+        let h = make_highlighter(&["error"], &[], &[], &[]);
+        let result = h.highlight_message("error then another error here");
+        // RED_COLOR should appear twice
+        assert_eq!(result.matches(RED_COLOR).count(), 2);
+    }
+
+    #[test]
+    fn single_occurrence_highlighted_once() {
+        let h = make_highlighter(&["error"], &[], &[], &[]);
+        let result = h.highlight_message("just one error here");
+        assert_eq!(result.matches(RED_COLOR).count(), 1);
+    }
+
+    // --- word boundary ---
+
+    #[test]
+    fn partial_word_not_highlighted() {
+        let h = make_highlighter(&["old"], &[], &[], &[]);
+        let result = h.highlight_message("unfolded map");
+        assert!(!result.contains(RED_COLOR));
+    }
+
+    #[test]
+    fn exact_word_is_highlighted() {
+        let h = make_highlighter(&["old"], &[], &[], &[]);
+        let result = h.highlight_message("the old route");
+        assert!(result.contains(RED_COLOR));
+    }
+}
