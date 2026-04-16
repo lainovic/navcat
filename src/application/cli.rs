@@ -90,4 +90,8 @@ pub struct Args {
     /// Items to show in the output (comma-separated); only entries containing these items will be displayed
     #[arg(short = 's', long, value_delimiter = ',', allow_hyphen_values = true)]
     pub show_items: Vec<String>,
+
+    /// Print a shell completion script and exit (supports: zsh)
+    #[arg(long, hide = true)]
+    pub completions: Option<String>,
 }

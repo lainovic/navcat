@@ -3,6 +3,25 @@ use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
+const ZSH_COMPLETION: &str = r#"#compdef navcat
+
+_navcat() {
+  _arguments \
+    '(-f --file)'{-f,--file}'[Load a logcat file into the TUI]:file:_files -g "*.txt(-.)"' \
+    '(-l --logcat-levels)'{-l,--logcat-levels}'[Log levels to show, comma-separated (I/D/E/W/T)]:levels' \
+    '(-t --tags)'{-t,--tags}'[Override the default tag filter list]:tags' \
+    '(-a --add-tag)'{-a,--add-tag}'[Add tags on top of the default list]:tag' \
+    '(-n --no-tag-filter)'{-n,--no-tag-filter}'[Disable tag filtering, show all tags]' \
+    '(-v --verbosity-level)'{-v,--verbosity-level}'[Logging verbosity]:level:(none error info debug)' \
+    '(-i --highlighted-items)'{-i,--highlighted-items}'[Terms to highlight, comma-separated]:items' \
+    '(-s --show-items)'{-s,--show-items}'[Only show lines containing these terms, comma-separated]:items' \
+    '--help[Show help]' \
+    '--version[Show version]'
+}
+
+_navcat "$@"
+"#;
+
 mod application;
 mod domain;
 mod shared;
@@ -22,6 +41,19 @@ fn main() -> Result<(), Box<dyn Error>> {
         VerbosityLevel::Info => shared::logger::LogLevel::Info,
         VerbosityLevel::Debug => shared::logger::LogLevel::Debug,
     });
+
+    if let Some(shell) = &args.completions {
+        match shell.as_str() {
+            "zsh" => {
+                print!("{}", ZSH_COMPLETION);
+                return Ok(());
+            }
+            other => {
+                eprintln!("unsupported shell: {}. Supported: zsh", other);
+                std::process::exit(1);
+            }
+        }
+    }
 
     let filter_state = FilterState::from_args(&args);
 
