@@ -46,7 +46,7 @@ pub struct Args {
     pub file: Option<String>,
 
     /// Log levels to show, comma-separated (I/INFO, D/DEBUG, E/ERROR, W/WARN, T/TRACE)
-    #[arg(short, long, default_value = "I,D,E")]
+    #[arg(short, long, default_value = "I,D,E,W")]
     pub logcat_levels: String,
 
     /// Tags to show (comma-separated)
