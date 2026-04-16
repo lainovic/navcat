@@ -38,8 +38,7 @@ EXAMPLES:
   # Disable tag filtering to see all tags
   navcat --no-tag-filter
 
-  # Hide specific message types
-  navcat --no-guidance --no-routing --no-mapmatching"#)]
+  # In live mode, use g/r/m keys to toggle guidance/routing/mapmatching at runtime"#)]
 pub struct Args {
     /// Path to logcat file (if not provided, runs in live mode)
     #[arg(short, long)]
@@ -79,18 +78,6 @@ pub struct Args {
     /// Disable tag filtering to show all tags
     #[arg(short, long)]
     pub no_tag_filter: bool,
-
-    /// Hide guidance and warning messages
-    #[arg(short = 'G', long)]
-    pub no_guidance: bool,
-
-    /// Hide route planning and calculation messages
-    #[arg(short = 'R', long)]
-    pub no_routing: bool,
-
-    /// Hide map-matching and location projection messages
-    #[arg(short = 'M', long)]
-    pub no_mapmatching: bool,
 
     /// Set verbosity level
     #[arg(short = 'v', long, default_value = "none")]

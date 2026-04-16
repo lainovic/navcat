@@ -40,12 +40,6 @@ navcat -f logcat.txt
 # Filter specific log levels
 navcat -l I,D,E
 
-# Hide guidance messages
-navcat --no-guidance
-
-# Hide routing messages
-navcat --no-routing
-
 # Set verbosity level
 navcat -v debug  # Options: none, error, info, debug
 
@@ -73,30 +67,8 @@ or anything that contains:
 - Match
 - Project
 
-All categories are shown by default. Use opt-out flags to reduce noise.
-
-### Filtering Options
-
-The tool provides opt-out flags to hide specific message categories:
-
-- `--no-guidance`: Hide guidance and warning messages
-  - Filters out tags containing "Guidance" or "Warning"
-  - Also blacklists messages containing "guidance", "instruction", or "warning"
-
-- `--no-routing`: Hide route planning and calculation messages
-  - Filters out tags containing "Planner"
-
-- `--no-mapmatching`: Hide map-matching and location projection messages
-  - Filters out tags containing "Match" or "Project"
-
-These flags can be combined to focus on specific areas:
-```bash
-# Show only core navigation (hide everything else)
-navcat --no-guidance --no-routing --no-mapmatching
-
-# Show everything except guidance noise
-navcat --no-guidance
-```
+In live mode, use the `g`, `r`, and `m` keys to toggle guidance, routing, and
+map-matching messages on and off at runtime.
 
 ### Color Highlighting
 

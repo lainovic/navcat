@@ -94,9 +94,9 @@ impl FilterState {
             base_tags,
             highlighted_items: args.highlighted_items.clone(),
             show_items: args.show_items.clone(),
-            guidance: !args.no_guidance,
-            routing: !args.no_routing,
-            mapmatching: !args.no_mapmatching,
+            guidance: true,
+            routing: true,
+            mapmatching: true,
         }
     }
 
