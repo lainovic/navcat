@@ -94,7 +94,7 @@ impl LogFilter {
             return None;
         }
 
-        let (level_idx, tag_idx) = Self::get_level_and_tag_indices(&parts);
+        let (level_idx, tag_idx) = Self::get_level_and_tag_indices(&parts)?;
 
         // Ensure we have enough parts for the detected format.
         if parts.len() <= tag_idx {
@@ -144,18 +144,18 @@ impl LogFilter {
         Some(colored_line.trim().to_string())
     }
 
-    fn get_level_and_tag_indices(parts: &[&str]) -> (usize, usize) {
-        match Self::detect_format(parts) {
-            LogFormat::FullWithPidTid => (5, 6),
-            LogFormat::Full => (4, 5),
-            LogFormat::Short => (4, 5),
-            LogFormat::Compact => (2, 3),
+    fn get_level_and_tag_indices(parts: &[&str]) -> Option<(usize, usize)> {
+        match Self::detect_format(parts)? {
+            LogFormat::FullWithPidTid => Some((5, 6)),
+            LogFormat::Full => Some((4, 5)),
+            LogFormat::Short => Some((4, 5)),
+            LogFormat::Compact => Some((2, 3)),
         }
     }
 
-    fn detect_format(parts: &[&str]) -> LogFormat {
+    fn detect_format(parts: &[&str]) -> Option<LogFormat> {
         if parts.len() < 3 {
-            return LogFormat::Short; // Fallback for very short lines
+            return None;
         }
 
         if parts[0].contains('-') && parts[0].len() == 10 {
@@ -166,22 +166,24 @@ impl LogFilter {
                     && Self::looks_like_pid(parts.get(3).copied())
                     && Self::looks_like_tid(parts.get(4).copied())
                 {
-                    return LogFormat::FullWithPidTid;
+                    return Some(LogFormat::FullWithPidTid);
                 }
-                LogFormat::Compact
+                Some(LogFormat::Compact)
             } else {
                 // No milliseconds: YYYY-MM-DD HH:MM:SS PID TID LEVEL TAG
                 if parts.len() >= 6
                     && Self::looks_like_pid(parts.get(2).copied())
                     && Self::looks_like_tid(parts.get(3).copied())
                 {
-                    return LogFormat::Full;
+                    return Some(LogFormat::Full);
                 }
-                LogFormat::Compact
+                Some(LogFormat::Compact)
             }
-        } else {
+        } else if parts[0].len() == 5 && parts[0].as_bytes()[2] == b'-' {
             // MM-DD format
-            LogFormat::Short
+            Some(LogFormat::Short)
+        } else {
+            None
         }
     }
 
