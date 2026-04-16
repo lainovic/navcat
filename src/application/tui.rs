@@ -232,11 +232,24 @@ fn splash() -> Paragraph<'static> {
     let bold_white = Style::default().fg(Color::White).add_modifier(Modifier::BOLD);
     let dim = Style::default().fg(Color::DarkGray);
 
+    let key = Style::default().fg(Color::White).add_modifier(Modifier::BOLD);
+
     let text = Text::from(vec![
         Line::from(""),
         Line::from(vec![Span::styled(" /\\_/\\  ", red), Span::styled("navcat", bold_white)]),
         Line::from(vec![Span::styled("( o.o )  ", red), Span::styled("nav log inspector", dim)]),
         Line::from(vec![Span::styled(" > ^ <", red)]),
+        Line::from(""),
+        Line::from(vec![
+            Span::styled("  g", key), Span::styled("  guidance    ", dim),
+            Span::styled("r", key),   Span::styled("  routing    ", dim),
+            Span::styled("m", key),   Span::styled("  map-matching", dim),
+        ]),
+        Line::from(vec![
+            Span::styled("  ↑↓", key), Span::styled(" scroll      ", dim),
+            Span::styled("f", key),    Span::styled("  follow     ", dim),
+            Span::styled("q", key),    Span::styled("  quit", dim),
+        ]),
         Line::from(""),
         Line::from(vec![Span::styled("  waiting for logs...", dim)]),
     ]);
