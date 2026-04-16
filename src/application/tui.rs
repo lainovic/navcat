@@ -207,9 +207,9 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
         frame.render_widget(List::new(items), log_area);
     }
 
-    let g = if app.filter_state.guidance { "G:on " } else { "G:off" };
-    let r = if app.filter_state.routing { "R:on " } else { "R:off" };
-    let m = if app.filter_state.mapmatching { "M:on " } else { "M:off" };
+    let g = if app.filter_state.guidance { "g:on " } else { "g:off" };
+    let r = if app.filter_state.routing { "r:on " } else { "r:off" };
+    let m = if app.filter_state.mapmatching { "m:on " } else { "m:off" };
     let mode = if app.follow { "FOLLOW" } else { "LOCKED" };
     let status = format!(
         " [{} {} {}] │ {} lines │ {}  │  g/r/m:toggle  ↑↓ jk:scroll  f:follow  q:quit",
