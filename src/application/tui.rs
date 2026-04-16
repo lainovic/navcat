@@ -37,6 +37,7 @@ pub struct AppState {
     search_mode: bool,
     search_query: String,
     quit_pending: Option<Instant>,
+    save_notice: Option<(Instant, String)>,
 }
 
 impl AppState {
@@ -55,6 +56,7 @@ impl AppState {
             search_mode: false,
             search_query: String::new(),
             quit_pending: None,
+            save_notice: None,
         }
     }
 
@@ -105,6 +107,21 @@ impl AppState {
 
     pub fn toggle_hint(&mut self) {
         self.show_hint = !self.show_hint;
+    }
+
+    pub fn dump_to_file(&self) -> Result<String, std::io::Error> {
+        use std::io::Write;
+        let filename = {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default();
+            format!("navcat_{}.txt", now.as_secs())
+        };
+        let mut file = std::fs::File::create(&filename)?;
+        for line in &self.raw_buffer {
+            writeln!(file, "{}", line)?;
+        }
+        Ok(filename)
     }
 
     pub fn enter_search(&mut self) {
@@ -242,6 +259,16 @@ fn run_loop(
             dirty = true;
         }
 
+        // Expire save notice
+        if let Some((deadline, _)) = app.save_notice {
+            if Instant::now() >= deadline {
+                app.save_notice = None;
+                dirty = true;
+            } else {
+                dirty = true;
+            }
+        }
+
         // Expire quit confirmation window
         if let Some(deadline) = app.quit_pending {
             if Instant::now() >= deadline {
@@ -327,6 +354,14 @@ fn run_loop(
                         }
                         KeyEvent { code: KeyCode::Char('m'), .. } => {
                             app.toggle_mapmatching();
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Char('w'), .. } => {
+                            let msg = match app.dump_to_file() {
+                                Ok(filename) => format!("  saved to {}", filename),
+                                Err(e) => format!("  save failed: {}", e),
+                            };
+                            app.save_notice = Some((Instant::now() + Duration::from_millis(3000), msg));
                             dirty = true;
                         }
                         KeyEvent { code: KeyCode::Char('?'), .. } => {
@@ -478,10 +513,15 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
     };
 
     let quit_confirming = app.quit_pending.map_or(false, |d| Instant::now() < d);
-    let hint = if quit_confirming {
+    let save_msg = app.save_notice.as_ref()
+        .filter(|(d, _)| Instant::now() < *d)
+        .map(|(_, msg)| msg.as_str());
+    let hint = if let Some(msg) = save_msg {
+        msg
+    } else if quit_confirming {
         "  press q again to quit"
     } else if app.show_hint {
-        "  n/g/r/m:toggle  /:search  ↑↓ jk:scroll  PgUp/Dn ^u/d:page  f:follow  q:quit  ?:hide"
+        "  n/g/r/m:toggle  w:save  /:search  ↑↓ jk:scroll  PgUp/Dn ^u/d:page  f:follow  q:quit  ?:hide"
     } else {
         "  ?"
     };
@@ -522,6 +562,8 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
             hint,
             if quit_confirming {
                 Style::default().bg(Color::Red).fg(Color::White).add_modifier(Modifier::BOLD)
+            } else if save_msg.is_some() {
+                Style::default().bg(Color::Green).fg(Color::Black).add_modifier(Modifier::BOLD)
             } else {
                 base_style
             },
