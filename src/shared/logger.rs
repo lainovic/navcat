@@ -71,8 +71,8 @@ impl Logger {
             if logger.level >= LogLevel::Info {
                 match args.len() {
                     0 => println!("INFO: {}", msg),
-                    1 => println!("INFO: {}", format!("{} {:?}", msg, args[0])),
-                    2 => println!("INFO: {}", format!("{} {:?} {:?}", msg, args[0], args[1])),
+                    1 => println!("INFO: {} {:?}", msg, args[0]),
+                    2 => println!("INFO: {} {:?} {:?}", msg, args[0], args[1]),
                     _ => println!("INFO: {}", msg),
                 }
             }
@@ -84,8 +84,8 @@ impl Logger {
             if logger.level >= LogLevel::Debug {
                 match args.len() {
                     0 => println!("DEBUG: {}", msg),
-                    1 => println!("DEBUG: {}", format!("{} {:?}", msg, args[0])),
-                    2 => println!("DEBUG: {}", format!("{} {:?} {:?}", msg, args[0], args[1])),
+                    1 => println!("DEBUG: {} {:?}", msg, args[0]),
+                    2 => println!("DEBUG: {} {:?} {:?}", msg, args[0], args[1]),
                     _ => println!("DEBUG: {}", msg),
                 }
             }

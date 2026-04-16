@@ -144,44 +144,40 @@ impl LogFilter {
         Some(colored_line.trim().to_string())
     }
 
-    fn get_level_and_tag_indices(parts: &Vec<&str>) -> (usize, usize) {
-        return match Self::detect_format(&parts) {
+    fn get_level_and_tag_indices(parts: &[&str]) -> (usize, usize) {
+        match Self::detect_format(parts) {
             LogFormat::FullWithPidTid => (5, 6),
             LogFormat::Full => (4, 5),
             LogFormat::Short => (4, 5),
             LogFormat::Compact => (2, 3),
-        };
+        }
     }
 
-    fn detect_format(parts: &Vec<&str>) -> LogFormat {
+    fn detect_format(parts: &[&str]) -> LogFormat {
         if parts.len() < 3 {
             return LogFormat::Short; // Fallback for very short lines
         }
-        
+
         if parts[0].contains('-') && parts[0].len() == 10 {
             // YYYY-MM-DD format
             if parts[1].contains('.') {
-                // Has milliseconds
-                if parts.len() >= 7 {
-                    // Check if we have enough parts for FullWithPidTid format
-                    // Format: YYYY-MM-DD HH:MM:SS.mmm +TZ PID TID LEVEL TAG
-                    if Self::looks_like_pid(parts.get(3).copied()) && Self::looks_like_tid(parts.get(4).copied()) {
-                        return LogFormat::FullWithPidTid;
-                    }
+                // Has milliseconds: YYYY-MM-DD HH:MM:SS.mmm +TZ PID TID LEVEL TAG
+                if parts.len() >= 7
+                    && Self::looks_like_pid(parts.get(3).copied())
+                    && Self::looks_like_tid(parts.get(4).copied())
+                {
+                    return LogFormat::FullWithPidTid;
                 }
-                // If we don't have PID/TID or not enough parts, it's Compact
-                return LogFormat::Compact;
+                LogFormat::Compact
             } else {
-                // No milliseconds
-                if parts.len() >= 6 {
-                    // Check if we have enough parts for Full format
-                    // Format: YYYY-MM-DD HH:MM:SS PID TID LEVEL TAG
-                    if Self::looks_like_pid(parts.get(2).copied()) && Self::looks_like_tid(parts.get(3).copied()) {
-                        return LogFormat::Full;
-                    }
+                // No milliseconds: YYYY-MM-DD HH:MM:SS PID TID LEVEL TAG
+                if parts.len() >= 6
+                    && Self::looks_like_pid(parts.get(2).copied())
+                    && Self::looks_like_tid(parts.get(3).copied())
+                {
+                    return LogFormat::Full;
                 }
-                // If we don't have PID/TID or not enough parts, it's Compact
-                return LogFormat::Compact;
+                LogFormat::Compact
             }
         } else {
             // MM-DD format
@@ -196,13 +192,4 @@ impl LogFilter {
     fn looks_like_tid(part: Option<&str>) -> bool {
         part.map(|p| p.chars().all(|c| c.is_ascii_digit())).unwrap_or(false)
     }
-
-    // TODO: use or remove
-    // pub fn add_highlight_word(&mut self, word: String, color: &'static str) {
-    //     self.message_highlighter.add_highlight_word(word, color);
-    // }
-
-    // pub fn remove_highlight_word(&mut self, word: &str) {
-    //     self.message_highlighter.remove_highlight_word(word);
-    // }
 }

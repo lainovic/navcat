@@ -181,13 +181,13 @@ impl<'a> MessageProcessor<'a> {
             || self.message_lower[..pos]
                 .chars()
                 .next_back()
-                .map_or(true, is_word_boundary);
+                .is_none_or(is_word_boundary);
 
         let ends_at_boundary = pos + word_len == self.message_lower.len()
             || self.message_lower[pos + word_len..]
                 .chars()
                 .next()
-                .map_or(true, is_word_boundary);
+                .is_none_or(is_word_boundary);
 
         starts_at_boundary && ends_at_boundary
     }
@@ -257,39 +257,4 @@ impl MessageHighlighter {
         let matches = processor.find_matches(self);
         processor.build_highlighted(matches)
     }
-
-    // TODO: use or remove
-    // pub fn add_highlight_word(&mut self, word: String, color: &'static str) {
-    //     let word_lower = word.to_lowercase();
-
-    //     match color {
-    //         c if c == RED_COLOR => self.red_rule.terms.insert(word_lower),
-    //         c if c == GREEN_COLOR => self.green_rule.terms.insert(word_lower),
-    //         c if c == YELLOW_COLOR => self.yellow_rule.terms.insert(word_lower),
-    //         _ => {
-    //             // Find or create a rule for other colors
-    //             if let Some(rule) = self.rules.iter_mut().find(|r| r.color == color) {
-    //                 rule.terms.insert(word_lower)
-    //             } else {
-    //                 let mut words = HashSet::new();
-    //                 words.insert(word_lower);
-    //                 self.rules.push(HighlightRule {
-    //                     terms: words,
-    //                     color,
-    //                 });
-    //                 true
-    //             }
-    //         }
-    //     };
-    // }
-
-    // pub fn remove_highlight_word(&mut self, word: &str) {
-    //     let word_lower = word.to_lowercase();
-    //     self.red_rule.terms.remove(&word_lower);
-    //     self.green_rule.terms.remove(&word_lower);
-    //     self.yellow_rule.terms.remove(&word_lower);
-    //     for rule in &mut self.rules {
-    //         rule.terms.remove(&word_lower);
-    //     }
-    // }
 }

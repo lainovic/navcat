@@ -30,11 +30,11 @@ impl TagCategories {
         for tag in tags {
             all_tags.insert(tag.clone());
             if tag.contains("Step") {
-                Self::add_tag(tag, &mut steps);
+                steps.push(tag);
             } else if tag.contains("Engine") {
-                Self::add_tag(tag, &mut engines);
+                engines.push(tag);
             } else {
-                Self::add_tag(tag, &mut top_classes);
+                top_classes.push(tag);
             }
         }
 
@@ -44,10 +44,6 @@ impl TagCategories {
             engines,
             all_tags,
         }
-    }
-
-    fn add_tag(tag: String, collection: &mut Vec<String>) {
-        collection.push(tag);
     }
 
     pub fn contains_tag(&self, tag: &str) -> bool {
@@ -82,10 +78,7 @@ impl FilterConfig {
         Logger::debug_fmt("All tags before filtering:", &[&tags]);
 
         if args.no_guidance {
-            tags = tags
-                .into_iter()
-                .filter(|tag| !tag.contains("Guidance") && !tag.contains("Warning"))
-                .collect();
+            tags.retain(|tag| !tag.contains("Guidance") && !tag.contains("Warning"));
             blacklisted_items.push("guidance".to_string());
             blacklisted_items.push("instruction".to_string());
             blacklisted_items.push("warning".to_string());
@@ -94,19 +87,13 @@ impl FilterConfig {
         Logger::debug_fmt("All tags after guidance filter:", &[&tags]);
 
         if args.no_routing {
-            tags = tags
-                .into_iter()
-                .filter(|tag| !tag.contains("Planner"))
-                .collect();
+            tags.retain(|tag| !tag.contains("Planner"));
         }
 
         Logger::debug_fmt("All tags after routing filter:", &[&tags]);
 
         if args.no_mapmatching {
-            tags = tags
-                .into_iter()
-                .filter(|tag| !tag.contains("Match") && !tag.contains("Project"))
-                .collect();
+            tags.retain(|tag| !tag.contains("Match") && !tag.contains("Project"));
         }
 
         Logger::debug_fmt("Final tags:", &[&tags]);
@@ -121,9 +108,9 @@ impl FilterConfig {
     }
 
     fn to_levels(levels_str: &str) -> Vec<&'static str> {
-        return levels_str
+        levels_str
             .split(',')
-            .map(|s| match s {
+            .flat_map(|s| match s {
                 "I" => vec!["I", "INFO"],
                 "D" => vec!["D", "DEBUG"],
                 "E" => vec!["E", "ERROR"],
@@ -131,11 +118,10 @@ impl FilterConfig {
                 "T" => vec!["T", "TRACE"],
                 _ => vec!["I", "INFO"],
             })
-            .flatten()
-            .collect();
+            .collect()
     }
 
     fn to_tags(tags_str: &str) -> Vec<String> {
-        return tags_str.split(',').map(|s| s.trim().to_string()).collect();
+        tags_str.split(',').map(|s| s.trim().to_string()).collect()
     }
 }
