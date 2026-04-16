@@ -33,6 +33,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             check_adb_available()?;
             check_device_connected()?;
 
+            Logger::set_log_file("/tmp/navcat.log")
+                .unwrap_or_else(|e| eprintln!("Warning: could not open log file: {}", e));
+
             let filter_state = FilterState::from_args(&args);
             let (child, receiver) = spawn_logcat()?;
             run_tui(child, receiver, filter_state)
