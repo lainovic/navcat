@@ -72,10 +72,6 @@ impl AppState {
         self.flash = Some((Instant::now() + Duration::from_millis(FLASH_MS), key));
     }
 
-    pub fn flash_active(&self) -> bool {
-        self.flash.map_or(false, |(until, _)| Instant::now() < until)
-    }
-
     fn is_flashing(&self, key: char) -> bool {
         self.flash
             .map_or(false, |(until, k)| k == key && Instant::now() < until)
@@ -254,9 +250,14 @@ fn run_loop(
             }
         }
 
-        // Keep redrawing while a toggle flash is in progress
-        if app.flash_active() {
-            dirty = true;
+        // Expire toggle flash and trigger one final redraw when it ends
+        if let Some((until, _)) = app.flash {
+            if Instant::now() < until {
+                dirty = true;
+            } else {
+                app.flash = None;
+                dirty = true;
+            }
         }
 
         // Expire save notice
@@ -471,16 +472,12 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
     }
 
     let base_style = Style::default().bg(Color::DarkGray).fg(Color::White);
-    let off_style = Style::default().bg(Color::DarkGray).fg(Color::DarkGray).add_modifier(Modifier::BOLD);
     let flash_style = Style::default().bg(Color::White).fg(Color::DarkGray).add_modifier(Modifier::BOLD);
 
-    // On-colors mirror tag colors: n=blue, g=magenta, r=bold red, m=yellow
-    let toggle_style = |on: bool, key: char| -> Style {
+    // Color identifies the category; on/off text indicates state
+    let toggle_style = |key: char| -> Style {
         if app.is_flashing(key) {
             return flash_style;
-        }
-        if !on {
-            return off_style;
         }
         match key {
             'n' => Style::default().bg(Color::DarkGray).fg(Color::Blue),
@@ -530,22 +527,22 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
         Span::styled(" [", base_style),
         Span::styled(
             if app.filter_state.navigation { "n:on " } else { "n:off" },
-            toggle_style(app.filter_state.navigation, 'n'),
+            toggle_style('n'),
         ),
         Span::styled(" ", base_style),
         Span::styled(
             if app.filter_state.guidance { "g:on " } else { "g:off" },
-            toggle_style(app.filter_state.guidance, 'g'),
+            toggle_style('g'),
         ),
         Span::styled(" ", base_style),
         Span::styled(
             if app.filter_state.routing { "r:on " } else { "r:off" },
-            toggle_style(app.filter_state.routing, 'r'),
+            toggle_style('r'),
         ),
         Span::styled(" ", base_style),
         Span::styled(
             if app.filter_state.mapmatching { "m:on " } else { "m:off" },
-            toggle_style(app.filter_state.mapmatching, 'm'),
+            toggle_style('m'),
         ),
         Span::styled(
             format!(
