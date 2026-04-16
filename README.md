@@ -3,6 +3,8 @@
 <div align="center">
   <img src="navcat.png" width="300">
   <br><br>
+  <img src="navcat.gif" width="800">
+  <br><br>
 </div>
 
 A terminal UI for inspecting Android logcat output from TomTom navigation SDK. Filters by navigation category, highlights by tag type, and lets you toggle filters at runtime without restarting.
