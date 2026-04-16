@@ -105,6 +105,16 @@ impl AppState {
         self.show_hint = !self.show_hint;
     }
 
+    pub fn reset_filters(&mut self) {
+        self.filter_state.navigation = true;
+        self.filter_state.guidance = true;
+        self.filter_state.routing = true;
+        self.filter_state.mapmatching = true;
+        self.search_query.clear();
+        self.search_mode = false;
+        self.rebuild_filter();
+    }
+
     pub fn dump_to_file(&self) -> Result<String, std::io::Error> {
         use std::io::Write;
         let filename = {
@@ -341,6 +351,10 @@ fn run_loop(
                             app.exit_search(true);
                             dirty = true;
                         }
+                        KeyEvent { code: KeyCode::Char('0'), .. } => {
+                            app.reset_filters();
+                            dirty = true;
+                        }
                         KeyEvent { code: KeyCode::Char('n'), .. } => {
                             app.toggle_navigation();
                             dirty = true;
@@ -519,7 +533,7 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
     } else if quit_confirming {
         "  press q again to quit"
     } else if app.show_hint {
-        "  n/g/r/m:toggle  w:save  /:search  ↑↓ jk:scroll  PgUp/Dn ^u/d:page  f:follow  q:quit  ?:hide"
+        "  n/g/r/m:toggle  0:reset  w:save  /:search  ↑↓ jk:scroll  PgUp/Dn ^u/d:page  f:follow  q:quit  ?:hide"
     } else {
         "  ?"
     };
@@ -598,6 +612,7 @@ fn splash() -> Paragraph<'static> {
         Line::from(vec![
             Span::styled("  PgUp/Dn", key), Span::styled(" page        ", dim),
             Span::styled("/", key),          Span::styled("  search     ", dim),
+            Span::styled("0", key),          Span::styled("  reset      ", dim),
             Span::styled("?", key),          Span::styled("  help", dim),
         ]),
         Line::from(""),
