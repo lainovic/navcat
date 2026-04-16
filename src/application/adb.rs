@@ -1,12 +1,10 @@
-use crate::domain::filter::LogFilter;
 use std::error::Error;
 use std::io::{BufRead, BufReader};
-use std::process::Command;
-
-use super::terminal::TerminalControl;
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{self, Receiver};
+use std::thread;
 
 pub fn check_adb_available() -> Result<(), Box<dyn Error>> {
-    // Try to run 'adb version' to check if adb is available
     match Command::new("adb").arg("version").output() {
         Ok(_) => Ok(()),
         Err(e) => {
@@ -20,12 +18,8 @@ pub fn check_adb_available() -> Result<(), Box<dyn Error>> {
 }
 
 pub fn check_device_connected() -> Result<(), Box<dyn Error>> {
-    // Check if any device is connected
     let output = Command::new("adb").arg("devices").output()?;
-
     let output_str = String::from_utf8_lossy(&output.stdout);
-
-    // Check if there's at least one device listed (excluding the header line)
     if output_str.lines().count() <= 1 {
         Err("No Android devices found. Please connect a device or start an emulator.".into())
     } else {
@@ -33,35 +27,25 @@ pub fn check_device_connected() -> Result<(), Box<dyn Error>> {
     }
 }
 
-pub fn start_logcat(
-    filter: LogFilter,
-    terminal: &dyn TerminalControl,
-) -> Result<(), Box<dyn Error>> {
-    // Start adb logcat process
+/// Spawns `adb logcat` and returns a channel receiver that emits raw log lines.
+/// The caller is responsible for killing the returned `Child` on exit.
+pub fn spawn_logcat() -> Result<(Child, Receiver<String>), Box<dyn Error>> {
     let mut child = Command::new("adb")
         .arg("logcat")
-        .stdout(std::process::Stdio::piped())
+        .stdout(Stdio::piped())
         .spawn()?;
 
-    // Get the stdout handle
-    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
-    let reader = BufReader::new(stdout);
+    let stdout = child.stdout.take().ok_or("Failed to capture adb stdout")?;
+    let (sender, receiver) = mpsc::channel();
 
-    // Read and print each line while running
-    let mut lines = reader.lines();
-    while terminal.is_running() {
-        match lines.next() {
-            Some(Ok(line)) => {
-                if let Some(colored_line) = filter.matches(&line) {
-                    println!("{}", colored_line);
-                }
+    thread::spawn(move || {
+        let reader = BufReader::new(stdout);
+        for line in reader.lines().map_while(Result::ok) {
+            if sender.send(line).is_err() {
+                break; // TUI dropped the receiver — exit thread
             }
-            Some(Err(e)) => eprintln!("Error reading line: {}", e),
-            None => break, // End of stream
         }
-    }
+    });
 
-    // Clean up
-    child.kill()?;
-    Ok(())
+    Ok((child, receiver))
 }

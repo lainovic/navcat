@@ -37,14 +37,6 @@ impl Logger {
     //     }
     // }
 
-    pub fn info(msg: &str) {
-        if let Ok(logger) = LOGGER.lock() {
-            if logger.level >= LogLevel::Info {
-                println!("INFO: {}", msg);
-            }
-        }
-    }
-
     pub fn debug(msg: &str) {
         if let Ok(logger) = LOGGER.lock() {
             if logger.level >= LogLevel::Debug {

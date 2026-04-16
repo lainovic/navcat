@@ -59,55 +59,82 @@ impl TagCategories {
     }
 }
 
-impl FilterConfig {
-    pub fn parse(args: &Args) -> Self {
-        let levels = Self::to_levels(&args.logcat_levels);
-        let mut tags = if args.no_tag_filter {
+/// Runtime-mutable filter state. Holds the immutable parts set from CLI args plus
+/// the three category toggles that can be flipped at runtime in the TUI.
+#[derive(Debug, Clone)]
+pub struct FilterState {
+    pub levels: Vec<&'static str>,
+    pub base_tags: Vec<String>,
+    pub highlighted_items: Vec<String>,
+    pub show_items: Vec<String>,
+    /// true = show guidance messages
+    pub guidance: bool,
+    /// true = show routing messages
+    pub routing: bool,
+    /// true = show map-matching messages
+    pub mapmatching: bool,
+}
+
+impl FilterState {
+    pub fn from_args(args: &Args) -> Self {
+        let levels = FilterConfig::to_levels(&args.logcat_levels);
+        let mut base_tags = if args.no_tag_filter {
             vec![]
         } else {
-            Self::to_tags(&args.tags)
+            FilterConfig::to_tags(&args.tags)
         };
-        let mut blacklisted_items = Vec::new();
-
-        // Add any additional tags from the command line
         for tag in &args.add_tag {
-            Logger::info_fmt("Adding tag:", &[&tag]);
-            tags.push(tag.clone());
+            base_tags.push(tag.clone());
         }
 
-        Logger::debug_fmt("All tags before filtering:", &[&tags]);
+        Logger::info_fmt("Base tags:", &[&base_tags]);
 
-        if args.no_guidance {
+        Self {
+            levels,
+            base_tags,
+            highlighted_items: args.highlighted_items.clone(),
+            show_items: args.show_items.clone(),
+            guidance: !args.no_guidance,
+            routing: !args.no_routing,
+            mapmatching: !args.no_mapmatching,
+        }
+    }
+
+    pub fn to_filter_config(&self) -> FilterConfig {
+        let mut tags = self.base_tags.clone();
+        let mut blacklisted_items = Vec::new();
+
+        if !self.guidance {
             tags.retain(|tag| !tag.contains("Guidance") && !tag.contains("Warning"));
             blacklisted_items.push("guidance".to_string());
             blacklisted_items.push("instruction".to_string());
             blacklisted_items.push("warning".to_string());
         }
 
-        Logger::debug_fmt("All tags after guidance filter:", &[&tags]);
-
-        if args.no_routing {
+        if !self.routing {
             tags.retain(|tag| !tag.contains("Planner"));
         }
 
-        Logger::debug_fmt("All tags after routing filter:", &[&tags]);
-
-        if args.no_mapmatching {
+        if !self.mapmatching {
             tags.retain(|tag| !tag.contains("Match") && !tag.contains("Project"));
         }
 
-        Logger::debug_fmt("Final tags:", &[&tags]);
-
-        Self {
-            levels,
+        FilterConfig {
+            levels: self.levels.clone(),
             tags: TagCategories::new(tags),
             blacklisted_items,
-            highlighted_items: args.highlighted_items.clone(),
-            show_items: args.show_items.clone(),
+            highlighted_items: self.highlighted_items.clone(),
+            show_items: self.show_items.clone(),
         }
     }
+}
 
-    fn to_levels(levels_str: &str) -> Vec<&'static str> {
+impl FilterConfig {
+    pub fn parse(args: &Args) -> Self {
+        FilterState::from_args(args).to_filter_config()
+    }
+
+    pub(crate) fn to_levels(levels_str: &str) -> Vec<&'static str> {
         levels_str
             .split(',')
             .flat_map(|s| match s {
@@ -121,7 +148,7 @@ impl FilterConfig {
             .collect()
     }
 
-    fn to_tags(tags_str: &str) -> Vec<String> {
+    pub(crate) fn to_tags(tags_str: &str) -> Vec<String> {
         tags_str.split(',').map(|s| s.trim().to_string()).collect()
     }
 }
