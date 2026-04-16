@@ -81,15 +81,15 @@ pub struct Args {
     pub no_tag_filter: bool,
 
     /// Hide guidance and warning messages
-    #[arg(long)]
+    #[arg(short = 'G', long)]
     pub no_guidance: bool,
 
     /// Hide route planning and calculation messages
-    #[arg(long)]
+    #[arg(short = 'R', long)]
     pub no_routing: bool,
 
     /// Hide map-matching and location projection messages
-    #[arg(long)]
+    #[arg(short = 'M', long)]
     pub no_mapmatching: bool,
 
     /// Set verbosity level
