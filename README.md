@@ -90,6 +90,12 @@ navcat --completions zsh > ~/.zfunc/_navcat
 
 After reloading your shell, `navcat -f <tab>` completes to `.txt` files only.
 
+## Alternatives
+
+**Android Studio logcat** — good for correlating logs with stack traces and crash reports in one window. navcat adds runtime category toggles, stacked search, and a persistent buffer that survives device disconnects. If you're already in AS debugging a crash, stay there. If you're live on a device hunting a replan or map-matching event, navcat is faster.
+
+**[Chipmunk](https://github.com/esrlabs/chipmunk)** — a full-featured desktop log analysis tool with DLT/SomeIP support, graphing, reusable filter sets, and no file size limits. Use Chipmunk for deep post-mortem analysis of large traces or when working with automotive formats. Use navcat for live adb sessions and quick TomTom nav SDK inspection without setup.
+
 ## Requirements
 
 - Rust 1.70+
