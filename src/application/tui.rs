@@ -214,7 +214,7 @@ pub fn run_tui(
         for line in preloaded {
             app.push_line(line);
         }
-        app.follow = false; // start at top for file mode
+        // follow stays true — start at bottom (most recent events) for file mode
     }
 
     let result = run_loop(&mut terminal, &mut app, &receiver);
@@ -474,18 +474,19 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
     let base_style = Style::default().bg(Color::DarkGray).fg(Color::White);
     let flash_style = Style::default().bg(Color::White).fg(Color::DarkGray).add_modifier(Modifier::BOLD);
 
-    // Color identifies the category; on/off text indicates state
-    let toggle_style = |key: char| -> Style {
+    // Color identifies the category; brightness indicates on/off state
+    let toggle_style = |on: bool, key: char| -> Style {
         if app.is_flashing(key) {
             return flash_style;
         }
-        match key {
+        let style = match key {
             'n' => Style::default().bg(Color::DarkGray).fg(Color::Blue),
             'g' => Style::default().bg(Color::DarkGray).fg(Color::Magenta),
             'r' => Style::default().bg(Color::DarkGray).fg(Color::Red).add_modifier(Modifier::BOLD),
             'm' => Style::default().bg(Color::DarkGray).fg(Color::Yellow),
             _   => Style::default().bg(Color::DarkGray).fg(Color::White),
-        }
+        };
+        if on { style } else { style.add_modifier(Modifier::DIM) }
     };
 
     let mode = if app.follow { "FOLLOW" } else { "PAUSED" };
@@ -527,22 +528,22 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
         Span::styled(" [", base_style),
         Span::styled(
             if app.filter_state.navigation { "n:on " } else { "n:off" },
-            toggle_style('n'),
+            toggle_style(app.filter_state.navigation, 'n'),
         ),
         Span::styled(" ", base_style),
         Span::styled(
             if app.filter_state.guidance { "g:on " } else { "g:off" },
-            toggle_style('g'),
+            toggle_style(app.filter_state.guidance, 'g'),
         ),
         Span::styled(" ", base_style),
         Span::styled(
             if app.filter_state.routing { "r:on " } else { "r:off" },
-            toggle_style('r'),
+            toggle_style(app.filter_state.routing, 'r'),
         ),
         Span::styled(" ", base_style),
         Span::styled(
             if app.filter_state.mapmatching { "m:on " } else { "m:off" },
-            toggle_style('m'),
+            toggle_style(app.filter_state.mapmatching, 'm'),
         ),
         Span::styled(
             format!(
