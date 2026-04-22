@@ -13,7 +13,7 @@ pub enum VerbosityLevel {
 }
 
 #[derive(Parser, Debug)]
-#[command(author, version, about,
+#[command(author, version, about, disable_version_flag = true,
     long_about = r#"A tool for processing Android logcat output that highlights navigation-related log entries and provides filtering and highlighting capabilities.
 
 EXAMPLES:
@@ -79,9 +79,9 @@ pub struct Args {
     #[arg(short, long)]
     pub no_tag_filter: bool,
 
-    /// Set verbosity level
-    #[arg(short = 'v', long, default_value = "none")]
-    pub verbosity_level: VerbosityLevel,
+    /// navcat internal debug logging; output goes to /tmp/navcat.log
+    #[arg(long, default_value = "none")]
+    pub debug_level: VerbosityLevel,
 
     /// Items to highlight in the output (comma-separated)
     #[arg(short = 'i', long, value_delimiter = ',', allow_hyphen_values = true)]
@@ -94,4 +94,8 @@ pub struct Args {
     /// Print a shell completion script and exit (supports: zsh)
     #[arg(long)]
     pub completions: Option<String>,
+
+    /// Print version
+    #[arg(short = 'v', long)]
+    pub version: bool,
 }

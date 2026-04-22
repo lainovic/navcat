@@ -12,7 +12,7 @@ _navcat() {
     '(-t --tags)'{-t,--tags}'[Override the default tag filter list]:tags' \
     '(-a --add-tag)'{-a,--add-tag}'[Add tags on top of the default list]:tag' \
     '(-n --no-tag-filter)'{-n,--no-tag-filter}'[Disable tag filtering, show all tags]' \
-    '(-v --verbosity-level)'{-v,--verbosity-level}'[Logging verbosity]:level:(none error info debug)' \
+    '--debug-level[navcat internal debug logging]:level:(none error info debug)' \
     '(-i --highlighted-items)'{-i,--highlighted-items}'[Terms to highlight, comma-separated]:items' \
     '(-s --show-items)'{-s,--show-items}'[Only show lines containing these terms, comma-separated]:items' \
     '--help[Show help]' \
@@ -35,12 +35,17 @@ use shared::logger::Logger;
 fn main() -> Result<(), Box<dyn Error>> {
     let args = Args::parse();
 
-    Logger::set_level(match args.verbosity_level {
+    Logger::set_level(match args.debug_level {
         VerbosityLevel::None => shared::logger::LogLevel::None,
         VerbosityLevel::Error => shared::logger::LogLevel::Error,
         VerbosityLevel::Info => shared::logger::LogLevel::Info,
         VerbosityLevel::Debug => shared::logger::LogLevel::Debug,
     });
+
+    if args.version {
+        println!("navcat {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
 
     if let Some(shell) = &args.completions {
         match shell.as_str() {

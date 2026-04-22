@@ -1,6 +1,7 @@
 use std::io;
 use std::process::Child;
 use std::sync::mpsc::Receiver;
+
 use std::time::{Duration, Instant};
 
 use crossterm::{
@@ -38,6 +39,7 @@ pub struct AppState {
     search_query: String,
     quit_pending: Option<Instant>,
     save_notice: Option<(Instant, String)>,
+    pub adb_connected: bool,
 }
 
 impl AppState {
@@ -57,6 +59,7 @@ impl AppState {
             search_query: String::new(),
             quit_pending: None,
             save_notice: None,
+            adb_connected: true,
         }
     }
 
@@ -244,7 +247,7 @@ pub fn run_tui(
         // follow stays true — start at bottom (most recent events) for file mode
     }
 
-    let result = run_loop(&mut terminal, &mut app, &receiver);
+    let result = run_loop(&mut terminal, &mut app, &receiver, &mut child);
 
     // Always restore terminal, even on error
     let _ = disable_raw_mode();
@@ -261,6 +264,7 @@ fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut AppState,
     receiver: &Option<Receiver<String>>,
+    child: &mut Option<Child>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut dirty = true;
 
@@ -273,7 +277,18 @@ fn run_loop(
                 received = true;
             }
             if received {
+                app.adb_connected = true; // clear disconnect banner when lines resume
                 dirty = true;
+            }
+        }
+
+        // Detect adb subprocess exit
+        if app.adb_connected {
+            if let Some(c) = child {
+                if matches!(c.try_wait(), Ok(Some(_))) {
+                    app.adb_connected = false;
+                    dirty = true;
+                }
             }
         }
 
@@ -549,7 +564,9 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
     let save_msg = app.save_notice.as_ref()
         .filter(|(d, _)| Instant::now() < *d)
         .map(|(_, msg)| msg.as_str());
-    let hint = if let Some(msg) = save_msg {
+    let hint = if !app.adb_connected {
+        "  adb disconnected — reconnecting..."
+    } else if let Some(msg) = save_msg {
         msg
     } else if quit_confirming {
         "  press q again to quit"
@@ -593,7 +610,9 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
         ),
         Span::styled(
             hint,
-            if quit_confirming {
+            if !app.adb_connected {
+                Style::default().bg(Color::Red).fg(Color::White).add_modifier(Modifier::BOLD)
+            } else if quit_confirming {
                 Style::default().bg(Color::Red).fg(Color::White).add_modifier(Modifier::BOLD)
             } else if save_msg.is_some() {
                 Style::default().bg(Color::Green).fg(Color::Black).add_modifier(Modifier::BOLD)
