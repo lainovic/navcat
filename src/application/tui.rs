@@ -391,11 +391,11 @@ fn run_loop(
                             dirty = true;
                         }
                         KeyEvent { code: KeyCode::Char('0'), .. } => {
-                            app.reset_filters();
+                            app.clear_filters();
                             dirty = true;
                         }
                         KeyEvent { code: KeyCode::Char('-'), .. } => {
-                            app.clear_filters();
+                            app.reset_filters();
                             dirty = true;
                         }
                         KeyEvent { code: KeyCode::Char('n'), .. } => {
@@ -582,7 +582,7 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
     } else if quit_confirming {
         "  press q again to quit"
     } else if app.show_hint {
-        "  n/g/r/m:toggle  0:all on  -:all off  w:save  /:search  ↑↓ jk:scroll  PgUp/Dn ^u/d:page  f:follow  ^l:clear  q:quit  ?:hide"
+        "  n/g/r/m:toggle  0:all off  -:all on  w:save  /:search  ↑↓ jk:scroll  PgUp/Dn ^u/d:page  f:follow  ^l:clear  q:quit  ?:hide"
     } else {
         "  ?"
     };
@@ -663,8 +663,8 @@ fn splash() -> Paragraph<'static> {
         Line::from(vec![
             Span::styled("  PgUp/Dn", key), Span::styled(" page        ", dim),
             Span::styled("/", key),          Span::styled("  search     ", dim),
-            Span::styled("0", key),          Span::styled("  all on     ", dim),
-            Span::styled("-", key),          Span::styled("  all off    ", dim),
+            Span::styled("0", key),          Span::styled("  all off    ", dim),
+            Span::styled("-", key),          Span::styled("  all on     ", dim),
             Span::styled("?", key),          Span::styled("  help", dim),
         ]),
         Line::from(""),

@@ -26,6 +26,9 @@ EXAMPLES:
   # Show only error and warning levels
   navcat -l "E,W"
 
+  # Include verbose logs
+  navcat -l "V,D,I,W,E"
+
   # Add custom tags
   navcat -a RouteDispatcher,LocationService
 
@@ -44,7 +47,7 @@ pub struct Args {
     #[arg(short, long)]
     pub file: Option<String>,
 
-    /// Log levels to show, comma-separated (I/INFO, D/DEBUG, E/ERROR, W/WARN, T/TRACE)
+    /// Log levels to show, comma-separated (V/D/I/W/E/F/S)
     #[arg(short, long, default_value = "I,D,E,W")]
     pub logcat_levels: String,
 

@@ -155,12 +155,14 @@ impl FilterConfig {
         levels_str
             .split(',')
             .flat_map(|s| match s {
-                "I" => vec!["I", "INFO"],
-                "D" => vec!["D", "DEBUG"],
-                "E" => vec!["E", "ERROR"],
-                "W" => vec!["W", "WARN"],
-                "T" => vec!["T", "TRACE"],
-                _ => vec!["I", "INFO"],
+                "V" | "VERBOSE" => vec!["V"],
+                "D" | "DEBUG"   => vec!["D"],
+                "I" | "INFO"    => vec!["I"],
+                "W" | "WARN"    => vec!["W"],
+                "E" | "ERROR"   => vec!["E"],
+                "F" | "FATAL"   => vec!["F"],
+                "S" | "SILENT"  => vec!["S"],
+                _ => vec!["I"],
             })
             .collect()
     }
