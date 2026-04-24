@@ -144,7 +144,6 @@ impl AppState {
 
     pub fn search_push(&mut self, c: char) {
         self.search_query.push(c);
-        self.follow = true; // jump to latest match as query narrows
     }
 
     pub fn search_pop(&mut self) {
@@ -159,16 +158,15 @@ impl AppState {
     pub fn push_line(&mut self, line: String) {
         if let Some(filtered) = self.filter.matches(&line) {
             self.filtered_cache.push(filtered);
-        }
-        self.raw_buffer.push(line);
-        if self.raw_buffer.len() > MAX_BUFFER {
-            self.raw_buffer.drain(..TRIM_SIZE);
-            self.scroll_offset = self.scroll_offset.saturating_sub(TRIM_SIZE);
-            // Rebuild cache after trim since raw/filtered are now out of sync
-            self.filtered_cache = self.raw_buffer
-                .iter()
-                .filter_map(|l| self.filter.matches(l))
-                .collect();
+            self.raw_buffer.push(line);
+            if self.raw_buffer.len() > MAX_BUFFER {
+                self.raw_buffer.drain(..TRIM_SIZE);
+                self.scroll_offset = self.scroll_offset.saturating_sub(TRIM_SIZE);
+                self.filtered_cache = self.raw_buffer
+                    .iter()
+                    .filter_map(|l| self.filter.matches(l))
+                    .collect();
+            }
         }
     }
 
@@ -182,9 +180,13 @@ impl AppState {
 
     fn leave_follow(&mut self) {
         if self.follow {
-            // Sync to the actual bottom position before disabling follow,
-            // otherwise scroll_offset of 0 would jump the view to the top.
-            self.scroll_offset = self.filtered_cache.len().saturating_sub(self.visible_height);
+            let display_len = if self.search_query.is_empty() {
+                self.filtered_cache.len()
+            } else {
+                let q = self.search_query.to_lowercase();
+                self.filtered_cache.iter().filter(|l| l.to_lowercase().contains(&q)).count()
+            };
+            self.scroll_offset = display_len.saturating_sub(self.visible_height);
             self.follow = false;
         }
     }
@@ -372,7 +374,11 @@ fn run_loop(
                 if app.search_mode {
                     match key {
                         KeyEvent { code: KeyCode::Esc, .. } => {
-                            app.exit_search(true);
+                            if app.has_search() {
+                                app.exit_search(true); // first Esc: clear query, stay in search
+                            } else {
+                                app.exit_search(false); // second Esc: exit search
+                            }
                             dirty = true;
                         }
                         KeyEvent { code: KeyCode::Enter, .. } => {
@@ -383,12 +389,15 @@ fn run_loop(
                             app.search_pop();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char(c), modifiers: KeyModifiers::NONE, .. }
-                        | KeyEvent { code: KeyCode::Char(c), modifiers: KeyModifiers::SHIFT, .. } => {
-                            app.search_push(c);
+                        // Arrow keys scroll without leaving search mode
+                        KeyEvent { code: KeyCode::Up, .. } => {
+                            app.scroll_up();
                             dirty = true;
                         }
-                        // Pass scroll keys through so you can browse while typing
+                        KeyEvent { code: KeyCode::Down, .. } => {
+                            app.scroll_down();
+                            dirty = true;
+                        }
                         KeyEvent { code: KeyCode::PageUp, .. }
                         | KeyEvent { code: KeyCode::Char('u'), modifiers: KeyModifiers::CONTROL, .. } => {
                             app.scroll_page_up();
@@ -397,6 +406,19 @@ fn run_loop(
                         KeyEvent { code: KeyCode::PageDown, .. }
                         | KeyEvent { code: KeyCode::Char('d'), modifiers: KeyModifiers::CONTROL, .. } => {
                             app.scroll_page_down();
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::End, .. } => {
+                            app.resume_follow();
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Char(c), modifiers: KeyModifiers::NONE, .. }
+                        | KeyEvent { code: KeyCode::Char(c), modifiers: KeyModifiers::SHIFT, .. } => {
+                            if c == 'f' {
+                                app.resume_follow();
+                            } else {
+                                app.search_push(c);
+                            }
                             dirty = true;
                         }
                         _ => {}

@@ -104,16 +104,13 @@ impl LogFilter {
             return None;
         }
 
-        // Check if any level matches, if levels are set.
-        if !self.levels.is_empty() {
-            let line_level = parts[level_idx];
-            if !self
-                .levels
-                .iter()
-                .any(|level| level.eq_ignore_ascii_case(line_level))
-            {
-                return None;
-            }
+        // Empty levels list means all levels are off — block everything.
+        if self.levels.is_empty() {
+            return None;
+        }
+        let line_level = parts[level_idx];
+        if !self.levels.iter().any(|level| level.eq_ignore_ascii_case(line_level)) {
+            return None;
         }
 
         // Check tag filter. When no_tag_filter is set, empty tag list means "show all".
