@@ -224,6 +224,13 @@ impl AppState {
     pub fn resume_follow(&mut self) {
         self.follow = true;
     }
+
+    pub fn clear_buffer(&mut self) {
+        self.raw_buffer.clear();
+        self.filtered_cache.clear();
+        self.scroll_offset = 0;
+        self.follow = true;
+    }
 }
 
 pub fn run_tui(
@@ -441,6 +448,10 @@ fn run_loop(
                             app.resume_follow();
                             dirty = true;
                         }
+                        KeyEvent { code: KeyCode::Char('l'), modifiers: KeyModifiers::CONTROL, .. } => {
+                            app.clear_buffer();
+                            dirty = true;
+                        }
                         _ => {}
                     }
                 }
@@ -571,7 +582,7 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
     } else if quit_confirming {
         "  press q again to quit"
     } else if app.show_hint {
-        "  n/g/r/m:toggle  0:all on  -:all off  w:save  /:search  ↑↓ jk:scroll  PgUp/Dn ^u/d:page  f:follow  q:quit  ?:hide"
+        "  n/g/r/m:toggle  0:all on  -:all off  w:save  /:search  ↑↓ jk:scroll  PgUp/Dn ^u/d:page  f:follow  ^l:clear  q:quit  ?:hide"
     } else {
         "  ?"
     };
