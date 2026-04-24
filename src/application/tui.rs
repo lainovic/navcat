@@ -19,7 +19,7 @@ use ratatui::{
 };
 
 use crate::domain::filter::LogFilter;
-use crate::domain::filter_config::FilterState;
+use crate::domain::filter_config::{FilterState, LevelState};
 
 const MAX_BUFFER: usize = 50_000;
 const TRIM_SIZE: usize = 10_000;
@@ -106,16 +106,6 @@ impl AppState {
 
     pub fn toggle_hint(&mut self) {
         self.show_hint = !self.show_hint;
-    }
-
-    pub fn reset_filters(&mut self) {
-        self.filter_state.navigation = true;
-        self.filter_state.guidance = true;
-        self.filter_state.routing = true;
-        self.filter_state.mapmatching = true;
-        self.search_query.clear();
-        self.search_mode = false;
-        self.rebuild_filter();
     }
 
     pub fn clear_filters(&mut self) {
@@ -230,6 +220,44 @@ impl AppState {
         self.filtered_cache.clear();
         self.scroll_offset = 0;
         self.follow = true;
+    }
+
+    pub fn toggle_level(&mut self, n: u8) {
+        let ls = &mut self.filter_state.level_state;
+        match n {
+            1 => ls.verbose = !ls.verbose,
+            2 => ls.debug   = !ls.debug,
+            3 => ls.info    = !ls.info,
+            4 => ls.warn    = !ls.warn,
+            5 => ls.error   = !ls.error,
+            6 => ls.fatal   = !ls.fatal,
+            _ => {}
+        }
+        self.rebuild_filter();
+    }
+
+    pub fn reset_levels(&mut self) {
+        self.filter_state.level_state = LevelState::default_levels();
+        self.rebuild_filter();
+    }
+
+    pub fn all_levels_off(&mut self) {
+        let ls = &mut self.filter_state.level_state;
+        ls.verbose = false;
+        ls.debug   = false;
+        ls.info    = false;
+        ls.warn    = false;
+        ls.error   = false;
+        ls.fatal   = false;
+        self.rebuild_filter();
+    }
+
+    pub fn all_categories_on(&mut self) {
+        self.filter_state.navigation  = true;
+        self.filter_state.guidance    = true;
+        self.filter_state.routing     = true;
+        self.filter_state.mapmatching = true;
+        self.rebuild_filter();
     }
 }
 
@@ -390,12 +418,44 @@ fn run_loop(
                             app.exit_search(true);
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char('0'), .. } => {
+                        KeyEvent { code: KeyCode::Char('['), .. } => {
                             app.clear_filters();
                             dirty = true;
                         }
+                        KeyEvent { code: KeyCode::Char(']'), .. } => {
+                            app.all_categories_on();
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Char('1'), .. } => {
+                            app.toggle_level(1);
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Char('2'), .. } => {
+                            app.toggle_level(2);
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Char('3'), .. } => {
+                            app.toggle_level(3);
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Char('4'), .. } => {
+                            app.toggle_level(4);
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Char('5'), .. } => {
+                            app.toggle_level(5);
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Char('6'), .. } => {
+                            app.toggle_level(6);
+                            dirty = true;
+                        }
+                        KeyEvent { code: KeyCode::Char('0'), .. } => {
+                            app.reset_levels();
+                            dirty = true;
+                        }
                         KeyEvent { code: KeyCode::Char('-'), .. } => {
-                            app.reset_filters();
+                            app.all_levels_off();
                             dirty = true;
                         }
                         KeyEvent { code: KeyCode::Char('n'), .. } => {
@@ -582,10 +642,14 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
     } else if quit_confirming {
         "  press q again to quit"
     } else if app.show_hint {
-        "  n/g/r/m:toggle  0:all off  -:all on  w:save  /:search  ↑↓ jk:scroll  PgUp/Dn ^u/d:page  f:follow  ^l:clear  q:quit  ?:hide"
+        "  n/g/r/m:cat  [:cat off  ]:cat on  1-6:lvl  0:lvl reset  -:lvl off  w:save  /:search  ↑↓jk:scroll  PgUp/Dn ^u/d:page  f:follow  ^l:clear  qq:quit  ?:hide"
     } else {
         "  ?"
     };
+
+    let dim_style = Style::default().bg(Color::DarkGray).fg(Color::DarkGray);
+    let level_on  = Style::default().bg(Color::DarkGray).fg(Color::White).add_modifier(Modifier::BOLD);
+    let ls = &app.filter_state.level_state;
 
     let status_line = Line::from(vec![
         Span::styled(" [", base_style),
@@ -608,6 +672,13 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
             if app.filter_state.mapmatching { "m:on " } else { "m:off" },
             toggle_style(app.filter_state.mapmatching, 'm'),
         ),
+        Span::styled("] [", base_style),
+        Span::styled("V", if ls.verbose { level_on } else { dim_style }),
+        Span::styled("D", if ls.debug   { level_on } else { dim_style }),
+        Span::styled("I", if ls.info    { level_on } else { dim_style }),
+        Span::styled("W", if ls.warn    { level_on } else { dim_style }),
+        Span::styled("E", if ls.error   { level_on } else { dim_style }),
+        Span::styled("F", if ls.fatal   { level_on } else { dim_style }),
         Span::styled(
             format!(
                 "] │ {} / {} │ {}{}{}",
@@ -656,16 +727,22 @@ fn splash() -> Paragraph<'static> {
             Span::styled("m", key),   Span::styled("  map-matching", dim),
         ]),
         Line::from(vec![
-            Span::styled("  ↑↓", key), Span::styled(" scroll      ", dim),
-            Span::styled("f", key),    Span::styled("  follow     ", dim),
-            Span::styled("q", key),    Span::styled("  quit", dim),
+            Span::styled("  ↑↓", key), Span::styled(" scroll   ", dim),
+            Span::styled("f", key),    Span::styled("  follow  ", dim),
+            Span::styled("[", key),    Span::styled("  cat off  ", dim),
+            Span::styled("]", key),    Span::styled("  cat on", dim),
         ]),
         Line::from(vec![
-            Span::styled("  PgUp/Dn", key), Span::styled(" page        ", dim),
-            Span::styled("/", key),          Span::styled("  search     ", dim),
-            Span::styled("0", key),          Span::styled("  all off    ", dim),
-            Span::styled("-", key),          Span::styled("  all on     ", dim),
-            Span::styled("?", key),          Span::styled("  help", dim),
+            Span::styled("  PgUp/Dn", key), Span::styled(" page     ", dim),
+            Span::styled("/", key),          Span::styled("  search  ", dim),
+            Span::styled("1-6", key),        Span::styled("  lvl toggle  ", dim),
+            Span::styled("0", key),          Span::styled("  lvl reset  ", dim),
+            Span::styled("-", key),          Span::styled("  lvl off", dim),
+        ]),
+        Line::from(vec![
+            Span::styled("  ^l", key), Span::styled(" clear    ", dim),
+            Span::styled("q", key),    Span::styled("  quit    ", dim),
+            Span::styled("?", key),    Span::styled("  help", dim),
         ]),
         Line::from(""),
         Line::from(vec![Span::styled("  waiting for logs...", dim)]),

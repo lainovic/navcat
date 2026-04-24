@@ -3,6 +3,49 @@ use std::collections::HashSet;
 use crate::application::cli::Args;
 use crate::shared::logger::Logger;
 
+#[derive(Debug, Clone)]
+pub struct LevelState {
+    pub verbose: bool,
+    pub debug: bool,
+    pub info: bool,
+    pub warn: bool,
+    pub error: bool,
+    pub fatal: bool,
+}
+
+impl LevelState {
+    pub fn default_levels() -> Self {
+        Self { verbose: false, debug: true, info: true, warn: true, error: true, fatal: false }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        let mut ls = Self { verbose: false, debug: false, info: false, warn: false, error: false, fatal: false };
+        for part in s.split(',') {
+            match part.trim() {
+                "V" | "VERBOSE" => ls.verbose = true,
+                "D" | "DEBUG"   => ls.debug = true,
+                "I" | "INFO"    => ls.info = true,
+                "W" | "WARN"    => ls.warn = true,
+                "E" | "ERROR"   => ls.error = true,
+                "F" | "FATAL"   => ls.fatal = true,
+                _ => {}
+            }
+        }
+        ls
+    }
+
+    pub fn to_levels(&self) -> Vec<&'static str> {
+        let mut v = Vec::new();
+        if self.verbose { v.push("V"); }
+        if self.debug   { v.push("D"); }
+        if self.info    { v.push("I"); }
+        if self.warn    { v.push("W"); }
+        if self.error   { v.push("E"); }
+        if self.fatal   { v.push("F"); }
+        v
+    }
+}
+
 #[derive(Debug)]
 pub struct FilterConfig {
     pub levels: Vec<&'static str>,
@@ -66,7 +109,7 @@ impl TagCategories {
 /// the four category toggles that can be flipped at runtime in the TUI.
 #[derive(Debug, Clone)]
 pub struct FilterState {
-    pub levels: Vec<&'static str>,
+    pub level_state: LevelState,
     pub base_tags: Vec<String>,
     pub highlighted_items: Vec<String>,
     pub show_items: Vec<String>,
@@ -83,7 +126,7 @@ pub struct FilterState {
 
 impl FilterState {
     pub fn from_args(args: &Args) -> Self {
-        let levels = FilterConfig::to_levels(&args.logcat_levels);
+        let level_state = LevelState::from_str(&args.logcat_levels);
         let mut base_tags = if args.no_tag_filter {
             vec![]
         } else {
@@ -96,7 +139,7 @@ impl FilterState {
         Logger::info_fmt("Base tags:", &[&base_tags]);
 
         Self {
-            levels,
+            level_state,
             base_tags,
             highlighted_items: args.highlighted_items.clone(),
             show_items: args.show_items.clone(),
@@ -140,7 +183,7 @@ impl FilterState {
         }
 
         FilterConfig {
-            levels: self.levels.clone(),
+            levels: self.level_state.to_levels(),
             tags: TagCategories::new(tags),
             blacklisted_items,
             highlighted_items: self.highlighted_items.clone(),
@@ -151,22 +194,6 @@ impl FilterState {
 }
 
 impl FilterConfig {
-    pub(crate) fn to_levels(levels_str: &str) -> Vec<&'static str> {
-        levels_str
-            .split(',')
-            .flat_map(|s| match s {
-                "V" | "VERBOSE" => vec!["V"],
-                "D" | "DEBUG"   => vec!["D"],
-                "I" | "INFO"    => vec!["I"],
-                "W" | "WARN"    => vec!["W"],
-                "E" | "ERROR"   => vec!["E"],
-                "F" | "FATAL"   => vec!["F"],
-                "S" | "SILENT"  => vec!["S"],
-                _ => vec!["I"],
-            })
-            .collect()
-    }
-
     pub(crate) fn to_tags(tags_str: &str) -> Vec<String> {
         tags_str.split(',').map(|s| s.trim().to_string()).collect()
     }

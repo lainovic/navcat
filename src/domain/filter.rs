@@ -50,12 +50,13 @@ impl LogFilter {
 
     fn get_level_color(level: &str) -> &'static str {
         match level {
-            "E" => "\x1b[31m", // Red for ERROR
-            "W" => "\x1b[33m", // Yellow for WARN
-            "I" => "\x1b[32m", // Green for INFO
-            "D" => "\x1b[36m", // Cyan for DEBUG
-            "T" => "\x1b[35m", // Magenta for TRACE
-            _ => RESET_COLOR,  // Default color for others
+            "V" => "\x1b[37m",   // White for VERBOSE
+            "D" => "\x1b[36m",   // Cyan for DEBUG
+            "I" => "\x1b[32m",   // Green for INFO
+            "W" => "\x1b[33m",   // Yellow for WARN
+            "E" => "\x1b[31m",   // Red for ERROR
+            "F" => "\x1b[1;31m", // Bold red for FATAL
+            _ => RESET_COLOR,
         }
     }
 
