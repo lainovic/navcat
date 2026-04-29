@@ -40,6 +40,7 @@ pub struct AppState {
     quit_pending: Option<Instant>,
     save_notice: Option<(Instant, String)>,
     pub adb_connected: bool,
+    last_was_crash: bool,
 }
 
 impl AppState {
@@ -60,15 +61,39 @@ impl AppState {
             quit_pending: None,
             save_notice: None,
             adb_connected: true,
+            last_was_crash: false,
         }
+    }
+
+    fn is_crash_line(line: &str) -> bool {
+        line.contains(" E AndroidRuntime:")
     }
 
     fn rebuild_filter(&mut self) {
         self.filter = LogFilter::new(self.filter_state.to_filter_config());
-        self.filtered_cache = self.raw_buffer
-            .iter()
-            .filter_map(|line| self.filter.matches(line))
-            .collect();
+        self.rebuild_filtered_cache();
+    }
+
+    fn rebuild_filtered_cache(&mut self) {
+        let mut cache = Vec::new();
+        let mut last_was_crash = false;
+        for line in &self.raw_buffer {
+            let is_crash = Self::is_crash_line(line);
+            if !is_crash {
+                last_was_crash = false;
+            }
+            if let Some(filtered) = self.filter.matches(line) {
+                if is_crash && !last_was_crash {
+                    cache.push(crash_separator());
+                }
+                cache.push(filtered);
+                if is_crash {
+                    last_was_crash = true;
+                }
+            }
+        }
+        self.filtered_cache = cache;
+        self.last_was_crash = last_was_crash;
     }
 
     fn set_flash(&mut self, key: char) {
@@ -156,16 +181,21 @@ impl AppState {
     }
 
     pub fn push_line(&mut self, line: String) {
+        let is_crash = Self::is_crash_line(&line);
+        if !is_crash {
+            self.last_was_crash = false;
+        }
         if let Some(filtered) = self.filter.matches(&line) {
+            if is_crash && !self.last_was_crash {
+                self.filtered_cache.push(crash_separator());
+            }
             self.filtered_cache.push(filtered);
+            self.last_was_crash = is_crash;
             self.raw_buffer.push(line);
             if self.raw_buffer.len() > MAX_BUFFER {
                 self.raw_buffer.drain(..TRIM_SIZE);
                 self.scroll_offset = self.scroll_offset.saturating_sub(TRIM_SIZE);
-                self.filtered_cache = self.raw_buffer
-                    .iter()
-                    .filter_map(|l| self.filter.matches(l))
-                    .collect();
+                self.rebuild_filtered_cache();
             }
         }
     }
@@ -222,6 +252,7 @@ impl AppState {
         self.filtered_cache.clear();
         self.scroll_offset = 0;
         self.follow = true;
+        self.last_was_crash = false;
     }
 
     pub fn toggle_level(&mut self, n: u8) {
@@ -592,11 +623,12 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
         ]));
         frame.render_widget(msg, log_area);
     } else {
+        let search_highlight = if search_q.is_empty() { None } else { Some(search_q.as_str()) };
         let items: Vec<ListItem> = display
             .iter()
             .skip(scroll_offset)
             .take(height)
-            .map(|line| ListItem::new(ansi_to_line(line)))
+            .map(|line| ListItem::new(ansi_to_line(line, search_highlight)))
             .collect();
         frame.render_widget(List::new(items), log_area);
     }
@@ -729,6 +761,43 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
     frame.render_widget(Paragraph::new(status_line), status_area);
 }
 
+fn crash_separator() -> String {
+    "\x1b[31m─── crash ───────────────────────────────────────────────────\x1b[0m".to_string()
+}
+
+fn highlight_search_in_spans(spans: Vec<Span<'static>>, query: &str) -> Vec<Span<'static>> {
+    if query.is_empty() {
+        return spans;
+    }
+    let query_lower = query.to_lowercase();
+    let highlight = Style::default()
+        .bg(Color::Yellow)
+        .fg(Color::Black)
+        .add_modifier(Modifier::BOLD);
+    let mut result = Vec::new();
+    for span in spans {
+        let text: &str = &span.content;
+        let text_lower = text.to_lowercase();
+        if !text_lower.contains(query_lower.as_str()) {
+            result.push(span);
+            continue;
+        }
+        let base = span.style;
+        let mut last = 0;
+        for (pos, _) in text_lower.match_indices(query_lower.as_str()) {
+            if pos > last {
+                result.push(Span::styled(text[last..pos].to_owned(), base));
+            }
+            result.push(Span::styled(text[pos..pos + query_lower.len()].to_owned(), highlight));
+            last = pos + query_lower.len();
+        }
+        if last < text.len() {
+            result.push(Span::styled(text[last..].to_owned(), base));
+        }
+    }
+    result
+}
+
 fn splash() -> Paragraph<'static> {
     let red = Style::default().fg(Color::Red);
     let bold_white = Style::default().fg(Color::White).add_modifier(Modifier::BOLD);
@@ -775,7 +844,7 @@ fn splash() -> Paragraph<'static> {
 
 /// Converts a string containing ANSI escape codes into a ratatui `Line` with
 /// styled `Span`s. Only handles the specific escape codes this app generates.
-fn ansi_to_line(s: &str) -> Line<'static> {
+fn ansi_to_line(s: &str, search: Option<&str>) -> Line<'static> {
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut current_style = Style::default();
     let mut current_text = String::new();
@@ -798,21 +867,22 @@ fn ansi_to_line(s: &str) -> Line<'static> {
                 }
             }
             current_style = match code.as_str() {
-                "0m" => Style::default(),
-                "31m" => Style::default().fg(Color::Red),
-                "32m" => Style::default().fg(Color::Green),
-                "33m" => Style::default().fg(Color::Yellow),
-                "34m" => Style::default().fg(Color::Blue),
-                "35m" => Style::default().fg(Color::Magenta),
-                "36m" => Style::default().fg(Color::Cyan),
-                "1;31m" => Style::default()
-                    .fg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
-                "1;32m" => Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
-                "43m" => Style::default().bg(Color::Yellow),
-                _ => Style::default(),
+                "0m"      => Style::default(),
+                "31m"     => Style::default().fg(Color::Red),
+                "32m"     => Style::default().fg(Color::Green),
+                "33m"     => Style::default().fg(Color::Yellow),
+                "34m"     => Style::default().fg(Color::Blue),
+                "35m"     => Style::default().fg(Color::Magenta),
+                "36m"     => Style::default().fg(Color::Cyan),
+                "37m"     => Style::default().fg(Color::White),
+                "90m"     => Style::default().fg(Color::DarkGray),
+                "2m"      => Style::default().add_modifier(Modifier::DIM),
+                "1;31m"   => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                "1;32m"   => Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+                "2;31m"   => Style::default().fg(Color::Red).add_modifier(Modifier::DIM),
+                "43m"     => Style::default().bg(Color::Yellow),
+                "1;97;41m" => Style::default().fg(Color::White).bg(Color::Red).add_modifier(Modifier::BOLD),
+                _         => Style::default(),
             };
         } else {
             current_text.push(c);
@@ -822,6 +892,12 @@ fn ansi_to_line(s: &str) -> Line<'static> {
     if !current_text.is_empty() {
         spans.push(Span::styled(current_text, current_style));
     }
+
+    let spans = if let Some(q) = search {
+        highlight_search_in_spans(spans, q)
+    } else {
+        spans
+    };
 
     Line::from(spans)
 }

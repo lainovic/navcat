@@ -55,13 +55,15 @@ impl LogFilter {
             "I" => "\x1b[32m",   // Green for INFO
             "W" => "\x1b[33m",   // Yellow for WARN
             "E" => "\x1b[31m",   // Red for ERROR
-            "F" => "\x1b[1;31m", // Bold red for FATAL
+            "F" => "\x1b[1;97;41m", // Bold white on red background for FATAL
             _ => RESET_COLOR,
         }
     }
 
     fn get_tag_color(&self, tag: &str) -> &'static str {
-        if self.tags.routing_tags.iter().any(|t| tag.contains(t)) {
+        if tag == "AndroidRuntime" {
+            "\x1b[1;31m" // Bold red for crash reporter
+        } else if self.tags.routing_tags.iter().any(|t| tag.contains(t)) {
             "\x1b[1;31m" // Bold red for routing (planners, replan)
         } else if self.tags.mapmatching_tags.iter().any(|t| tag.contains(t)) {
             "\x1b[33m" // Yellow for map-matching
@@ -72,10 +74,49 @@ impl LogFilter {
         }
     }
 
+    fn is_crash_tag(tag: &str) -> bool {
+        tag == "AndroidRuntime"
+    }
+
+    fn colorize_crash_message(message: &str) -> String {
+        let t = message.trim_start();
+        if Self::is_crash_exception_line(t) {
+            format!("\x1b[1;31m{message}{RESET_COLOR}") // bold red: exception names / causes
+        } else if Self::is_crash_framework_frame(t) {
+            format!("\x1b[90m{message}{RESET_COLOR}") // dark gray: framework noise
+        } else {
+            format!("\x1b[31m{message}{RESET_COLOR}") // red: app frames
+        }
+    }
+
+    fn is_crash_exception_line(trimmed: &str) -> bool {
+        trimmed.starts_with("FATAL EXCEPTION")
+            || trimmed.starts_with("Caused by:")
+            // Java exception class: has a dot, has a colon, not an "at " frame or "... N more"
+            || (!trimmed.starts_with("at ")
+                && !trimmed.starts_with("...")
+                && trimmed.contains('.')
+                && trimmed.contains(':'))
+    }
+
+    fn is_crash_framework_frame(trimmed: &str) -> bool {
+        trimmed.starts_with("...")
+            || ["at android.", "at java.", "at kotlin.", "at com.android.",
+                "at dalvik.", "at sun.", "at libcore."]
+                .iter()
+                .any(|p| trimmed.starts_with(p))
+    }
+
     pub fn matches(&self, line: &str) -> Option<String> {
         if line.trim().is_empty() {
             return None;
         }
+
+        // Raw stack trace lines (no logcat header) — pass through with dim red.
+        if Self::looks_like_stack_trace(line) {
+            return Some(format!("\x1b[2;31m{line}\x1b[0m"));
+        }
+
         let line_lower = line.to_ascii_lowercase();
 
         if !self.show_items.is_empty()
@@ -113,10 +154,13 @@ impl LogFilter {
             return None;
         }
 
-        // Check tag filter. When no_tag_filter is set, empty tag list means "show all".
+        // Check tag filter. FATAL lines bypass tag filtering so crashes always show.
+        // When no_tag_filter is set, empty tag list means "show all".
         // Otherwise empty tag list means all category toggles are off → show nothing.
         let line_tag = parts[tag_idx].trim_end_matches(':');
-        if !self.no_tag_filter {
+        let is_fatal = line_level.eq_ignore_ascii_case("F");
+        let is_crash = line_level.eq_ignore_ascii_case("E") && Self::is_crash_tag(line_tag);
+        if !self.no_tag_filter && !is_fatal && !is_crash {
             if self.tags.all_tags.is_empty() || !self.tags.contains_tag(line_tag) {
                 return None;
             }
@@ -136,8 +180,16 @@ impl LogFilter {
                 colored_line.push_str(RESET_COLOR);
             } else if i > tag_idx {
                 let message = parts[tag_idx + 1..].join(" ");
-                colored_line.push_str(&self.message_highlighter.highlight_message(&message));
+                if is_crash {
+                    colored_line.push_str(&Self::colorize_crash_message(&message));
+                } else {
+                    colored_line.push_str(&self.message_highlighter.highlight_message(&message));
+                }
                 break; // Skip remaining parts since we've joined them
+            } else if i < level_idx {
+                colored_line.push_str("\x1b[90m");
+                colored_line.push_str(part);
+                colored_line.push_str(RESET_COLOR);
             } else {
                 colored_line.push_str(part);
             }
@@ -145,6 +197,11 @@ impl LogFilter {
         }
 
         Some(colored_line.trim().to_string())
+    }
+
+    fn looks_like_stack_trace(line: &str) -> bool {
+        let t = line.trim_start();
+        t.starts_with("at ") || t.starts_with("Caused by:") || t.starts_with("Suppressed:")
     }
 
     fn get_level_and_tag_indices(parts: &[&str]) -> Option<(usize, usize)> {
@@ -296,7 +353,7 @@ mod tests {
 
     #[test]
     fn matches_passes_matching_tag() {
-        let filter = make_filter(vec![], vec!["Navigation"], vec![], vec![]);
+        let filter = make_filter(vec!["I"], vec!["Navigation"], vec![], vec![]);
         let line = "2024-01-15 10:30:45 1234 5678 I DefaultNavigation: hello";
         assert!(filter.matches(line).is_some());
     }
@@ -335,7 +392,7 @@ mod tests {
 
     #[test]
     fn matches_passes_line_containing_show_item() {
-        let filter = make_filter(vec![], vec![], vec![], vec!["replan"]);
+        let filter = make_filter(vec!["I"], vec![], vec![], vec!["replan"]);
         let line = "2024-01-15 10:30:45 1234 5678 I SomeTag: replan triggered";
         assert!(filter.matches(line).is_some());
     }
@@ -357,9 +414,27 @@ mod tests {
     }
 
     #[test]
-    fn matches_unrecognized_format_returns_none() {
+    fn matches_stack_trace_lines_pass_through() {
         let filter = make_filter(vec![], vec![], vec![], vec![]);
-        assert!(filter.matches("at com.example.Foo.bar(Foo.kt:42)").is_none());
+        assert!(filter.matches("at com.example.Foo.bar(Foo.kt:42)").is_some());
+        assert!(filter.matches("\tat com.example.Foo.bar(Foo.kt:42)").is_some());
+        assert!(filter.matches("Caused by: java.lang.NullPointerException").is_some());
         assert!(filter.matches("--------- beginning of main").is_none());
+    }
+
+    #[test]
+    fn matches_stack_trace_lines_are_dim_red() {
+        let filter = make_filter(vec![], vec![], vec![], vec![]);
+        let result = filter.matches("at com.example.Foo.bar(Foo.kt:42)").unwrap();
+        assert!(result.contains("\x1b[2;31m"));
+        assert!(result.contains("\x1b[0m"));
+    }
+
+    #[test]
+    fn matches_fatal_level_uses_background_red() {
+        let filter = make_filter(vec!["F"], vec![], vec![], vec![]);
+        let line = "2024-01-15 10:30:45 1234 5678 F SomeTag: crash";
+        let result = filter.matches(line).unwrap();
+        assert!(result.contains("\x1b[1;97;41m"));
     }
 }

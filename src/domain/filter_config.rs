@@ -15,7 +15,7 @@ pub struct LevelState {
 
 impl LevelState {
     pub fn default_levels() -> Self {
-        Self { verbose: false, debug: true, info: true, warn: true, error: true, fatal: false }
+        Self { verbose: false, debug: true, info: true, warn: true, error: true, fatal: true }
     }
 
     pub fn from_str(s: &str) -> Self {
