@@ -65,10 +65,6 @@ impl AppState {
         }
     }
 
-    fn is_crash_line(line: &str) -> bool {
-        line.contains(" E AndroidRuntime:")
-    }
-
     fn rebuild_filter(&mut self) {
         self.filter = LogFilter::new(self.filter_state.to_filter_config());
         self.rebuild_filtered_cache();
@@ -78,7 +74,7 @@ impl AppState {
         let mut cache = Vec::new();
         let mut last_was_crash = false;
         for line in &self.raw_buffer {
-            let is_crash = Self::is_crash_line(line);
+            let is_crash = LogFilter::is_crash_line(line);
             if !is_crash {
                 last_was_crash = false;
             }
@@ -186,7 +182,7 @@ impl AppState {
 
     pub fn push_line(&mut self, line: String) {
         self.raw_buffer.push(line.clone());
-        let is_crash = Self::is_crash_line(&line);
+        let is_crash = LogFilter::is_crash_line(&line);
         if !is_crash {
             self.last_was_crash = false;
         }
@@ -1074,8 +1070,52 @@ fn splash() -> Paragraph<'static> {
     Paragraph::new(text).alignment(Alignment::Left)
 }
 
-/// Converts a string containing ANSI escape codes into a ratatui `Line` with
-/// styled `Span`s. Only handles the specific escape codes this app generates.
+fn parse_sgr(code: &str) -> Style {
+    let params = code.strip_suffix('m').unwrap_or(code);
+    let mut style = Style::default();
+    for param in params.split(';') {
+        let n: u8 = match param.parse() {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        style = match n {
+            0 => return Style::default(),
+            1 => style.add_modifier(Modifier::BOLD),
+            2 => style.add_modifier(Modifier::DIM),
+            30..=37 => style.fg(sgr_color(n - 30, false)),
+            39 => style.fg(Color::Reset),
+            40..=47 => style.bg(sgr_color(n - 40, false)),
+            49 => style.bg(Color::Reset),
+            90..=97 => style.fg(sgr_color(n - 90, true)),
+            100..=107 => style.bg(sgr_color(n - 100, true)),
+            _ => style,
+        };
+    }
+    style
+}
+
+fn sgr_color(idx: u8, bright: bool) -> Color {
+    match (idx, bright) {
+        (0, false) => Color::Black,
+        (1, false) => Color::Red,
+        (2, false) => Color::Green,
+        (3, false) => Color::Yellow,
+        (4, false) => Color::Blue,
+        (5, false) => Color::Magenta,
+        (6, false) => Color::Cyan,
+        (7, false) => Color::Gray,
+        (0, true) => Color::DarkGray,
+        (1, true) => Color::LightRed,
+        (2, true) => Color::LightGreen,
+        (3, true) => Color::LightYellow,
+        (4, true) => Color::LightBlue,
+        (5, true) => Color::LightMagenta,
+        (6, true) => Color::LightCyan,
+        (7, true) => Color::White,
+        _ => Color::Reset,
+    }
+}
+
 fn ansi_to_line(s: &str, search: Option<&str>) -> Line<'static> {
     let mut spans: Vec<Span<'static>> = Vec::new();
     let mut current_style = Style::default();
@@ -1084,7 +1124,7 @@ fn ansi_to_line(s: &str, search: Option<&str>) -> Line<'static> {
 
     while let Some(c) = chars.next() {
         if c == '\x1b' && chars.peek() == Some(&'[') {
-            chars.next(); // consume '['
+            chars.next();
             if !current_text.is_empty() {
                 spans.push(Span::styled(
                     std::mem::take(&mut current_text),
@@ -1098,29 +1138,7 @@ fn ansi_to_line(s: &str, search: Option<&str>) -> Line<'static> {
                     break;
                 }
             }
-            current_style = match code.as_str() {
-                "0m" => Style::default(),
-                "31m" => Style::default().fg(Color::Red),
-                "32m" => Style::default().fg(Color::Green),
-                "33m" => Style::default().fg(Color::Yellow),
-                "34m" => Style::default().fg(Color::Blue),
-                "35m" => Style::default().fg(Color::Magenta),
-                "36m" => Style::default().fg(Color::Cyan),
-                "37m" => Style::default().fg(Color::White),
-                "90m" => Style::default().fg(Color::DarkGray),
-                "2m" => Style::default().add_modifier(Modifier::DIM),
-                "1;31m" => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                "1;32m" => Style::default()
-                    .fg(Color::Green)
-                    .add_modifier(Modifier::BOLD),
-                "2;31m" => Style::default().fg(Color::Red).add_modifier(Modifier::DIM),
-                "43m" => Style::default().bg(Color::Yellow),
-                "1;97;41m" => Style::default()
-                    .fg(Color::White)
-                    .bg(Color::Red)
-                    .add_modifier(Modifier::BOLD),
-                _ => Style::default(),
-            };
+            current_style = parse_sgr(&code);
         } else {
             current_text.push(c);
         }

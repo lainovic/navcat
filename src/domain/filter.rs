@@ -93,6 +93,10 @@ impl LogFilter {
         tag == "AndroidRuntime"
     }
 
+    pub fn is_crash_line(line: &str) -> bool {
+        line.contains(" E AndroidRuntime:")
+    }
+
     fn colorize_crash_message(message: &str) -> String {
         let t = message.trim_start();
         if Self::is_crash_exception_line(t) {
