@@ -7,17 +7,18 @@ use std::time::{Duration, Instant};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{
+    Terminal,
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{List, ListItem, Paragraph},
-    Terminal,
 };
 
+use crate::application::adb::LogcatEvent;
 use crate::domain::filter::LogFilter;
 use crate::domain::filter_config::{FilterState, LevelState};
 
@@ -181,6 +182,7 @@ impl AppState {
     }
 
     pub fn push_line(&mut self, line: String) {
+        self.raw_buffer.push(line.clone());
         let is_crash = Self::is_crash_line(&line);
         if !is_crash {
             self.last_was_crash = false;
@@ -191,12 +193,11 @@ impl AppState {
             }
             self.filtered_cache.push(filtered);
             self.last_was_crash = is_crash;
-            self.raw_buffer.push(line);
-            if self.raw_buffer.len() > MAX_BUFFER {
-                self.raw_buffer.drain(..TRIM_SIZE);
-                self.scroll_offset = self.scroll_offset.saturating_sub(TRIM_SIZE);
-                self.rebuild_filtered_cache();
-            }
+        }
+        if self.raw_buffer.len() > MAX_BUFFER {
+            self.raw_buffer.drain(..TRIM_SIZE);
+            self.scroll_offset = self.scroll_offset.saturating_sub(TRIM_SIZE);
+            self.rebuild_filtered_cache();
         }
     }
 
@@ -214,7 +215,10 @@ impl AppState {
                 self.filtered_cache.len()
             } else {
                 let q = self.search_query.to_lowercase();
-                self.filtered_cache.iter().filter(|l| l.to_lowercase().contains(&q)).count()
+                self.filtered_cache
+                    .iter()
+                    .filter(|l| l.to_lowercase().contains(&q))
+                    .count()
             };
             self.scroll_offset = display_len.saturating_sub(self.visible_height);
             self.follow = false;
@@ -255,15 +259,32 @@ impl AppState {
         self.last_was_crash = false;
     }
 
+    fn apply_logcat_event(&mut self, event: LogcatEvent) -> bool {
+        match event {
+            LogcatEvent::Line(line) => {
+                self.push_line(line);
+                true
+            }
+            LogcatEvent::Connected => {
+                self.adb_connected = true;
+                false
+            }
+            LogcatEvent::Disconnected => {
+                self.adb_connected = false;
+                false
+            }
+        }
+    }
+
     pub fn toggle_level(&mut self, n: u8) {
         let ls = &mut self.filter_state.level_state;
         match n {
             1 => ls.verbose = !ls.verbose,
-            2 => ls.debug   = !ls.debug,
-            3 => ls.info    = !ls.info,
-            4 => ls.warn    = !ls.warn,
-            5 => ls.error   = !ls.error,
-            6 => ls.fatal   = !ls.fatal,
+            2 => ls.debug = !ls.debug,
+            3 => ls.info = !ls.info,
+            4 => ls.warn = !ls.warn,
+            5 => ls.error = !ls.error,
+            6 => ls.fatal = !ls.fatal,
             _ => {}
         }
         self.rebuild_filter();
@@ -277,18 +298,18 @@ impl AppState {
     pub fn all_levels_off(&mut self) {
         let ls = &mut self.filter_state.level_state;
         ls.verbose = false;
-        ls.debug   = false;
-        ls.info    = false;
-        ls.warn    = false;
-        ls.error   = false;
-        ls.fatal   = false;
+        ls.debug = false;
+        ls.info = false;
+        ls.warn = false;
+        ls.error = false;
+        ls.fatal = false;
         self.rebuild_filter();
     }
 
     pub fn all_categories_on(&mut self) {
-        self.filter_state.navigation  = true;
-        self.filter_state.guidance    = true;
-        self.filter_state.routing     = true;
+        self.filter_state.navigation = true;
+        self.filter_state.guidance = true;
+        self.filter_state.routing = true;
         self.filter_state.mapmatching = true;
         self.rebuild_filter();
     }
@@ -296,7 +317,7 @@ impl AppState {
 
 pub fn run_tui(
     mut child: Option<Child>,
-    receiver: Option<Receiver<String>>,
+    receiver: Option<Receiver<LogcatEvent>>,
     filter_state: FilterState,
     preloaded: Vec<String>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -331,7 +352,7 @@ pub fn run_tui(
 fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut AppState,
-    receiver: &Option<Receiver<String>>,
+    receiver: &Option<Receiver<LogcatEvent>>,
     child: &mut Option<Child>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut dirty = true;
@@ -340,23 +361,21 @@ fn run_loop(
         // Drain new lines from the adb thread (live mode only)
         if let Some(rx) = receiver {
             let mut received = false;
-            while let Ok(line) = rx.try_recv() {
-                app.push_line(line);
-                received = true;
+            while let Ok(event) = rx.try_recv() {
+                if app.apply_logcat_event(event) {
+                    received = true;
+                }
+                dirty = true;
             }
             if received {
-                app.adb_connected = true; // clear disconnect banner when lines resume
                 dirty = true;
             }
         }
 
-        // Detect adb subprocess exit
-        if app.adb_connected {
-            if let Some(c) = child {
-                if matches!(c.try_wait(), Ok(Some(_))) {
-                    app.adb_connected = false;
-                    dirty = true;
-                }
+        // Reap the initial adb subprocess so it does not become a zombie.
+        if let Some(c) = child {
+            if matches!(c.try_wait(), Ok(Some(_))) {
+                *child = None;
             }
         }
 
@@ -404,7 +423,9 @@ fn run_loop(
             if let Event::Key(key) = event::read()? {
                 if app.search_mode {
                     match key {
-                        KeyEvent { code: KeyCode::Esc, .. } => {
+                        KeyEvent {
+                            code: KeyCode::Esc, ..
+                        } => {
                             if app.has_search() {
                                 app.exit_search(true); // first Esc: clear query, stay in search
                             } else {
@@ -412,39 +433,82 @@ fn run_loop(
                             }
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Enter, .. } => {
+                        KeyEvent {
+                            code: KeyCode::Enter,
+                            ..
+                        } => {
                             app.exit_search(false);
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Backspace, .. } => {
+                        KeyEvent {
+                            code: KeyCode::Backspace,
+                            ..
+                        } => {
                             app.search_pop();
                             dirty = true;
                         }
+                        KeyEvent {
+                            code: KeyCode::Char('l'),
+                            modifiers: KeyModifiers::CONTROL,
+                            ..
+                        } => {
+                            app.clear_buffer();
+                            dirty = true;
+                        }
                         // Arrow keys scroll without leaving search mode
-                        KeyEvent { code: KeyCode::Up, .. } => {
+                        KeyEvent {
+                            code: KeyCode::Up, ..
+                        } => {
                             app.scroll_up();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Down, .. } => {
+                        KeyEvent {
+                            code: KeyCode::Down,
+                            ..
+                        } => {
                             app.scroll_down();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::PageUp, .. }
-                        | KeyEvent { code: KeyCode::Char('u'), modifiers: KeyModifiers::CONTROL, .. } => {
+                        KeyEvent {
+                            code: KeyCode::PageUp,
+                            ..
+                        }
+                        | KeyEvent {
+                            code: KeyCode::Char('u'),
+                            modifiers: KeyModifiers::CONTROL,
+                            ..
+                        } => {
                             app.scroll_page_up();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::PageDown, .. }
-                        | KeyEvent { code: KeyCode::Char('d'), modifiers: KeyModifiers::CONTROL, .. } => {
+                        KeyEvent {
+                            code: KeyCode::PageDown,
+                            ..
+                        }
+                        | KeyEvent {
+                            code: KeyCode::Char('d'),
+                            modifiers: KeyModifiers::CONTROL,
+                            ..
+                        } => {
                             app.scroll_page_down();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::End, .. } => {
+                        KeyEvent {
+                            code: KeyCode::End, ..
+                        } => {
                             app.resume_follow();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char(c), modifiers: KeyModifiers::NONE, .. }
-                        | KeyEvent { code: KeyCode::Char(c), modifiers: KeyModifiers::SHIFT, .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char(c),
+                            modifiers: KeyModifiers::NONE,
+                            ..
+                        }
+                        | KeyEvent {
+                            code: KeyCode::Char(c),
+                            modifiers: KeyModifiers::SHIFT,
+                            ..
+                        } => {
                             if c == 'f' {
                                 app.resume_follow();
                             } else {
@@ -456,112 +520,206 @@ fn run_loop(
                     }
                 } else {
                     match key {
-                        KeyEvent { code: KeyCode::Char('q'), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char('q'),
+                            ..
+                        } => {
                             if app.quit_pending.map_or(false, |d| Instant::now() < d) {
                                 break;
                             }
                             app.quit_pending = Some(Instant::now() + Duration::from_millis(1500));
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char('/'), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char('/'),
+                            ..
+                        } => {
                             app.enter_search();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Esc, .. } if app.has_search() => {
+                        KeyEvent {
+                            code: KeyCode::Esc, ..
+                        } if app.has_search() => {
                             app.exit_search(true);
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char('['), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char('['),
+                            ..
+                        } => {
                             app.clear_filters();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char(']'), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char(']'),
+                            ..
+                        } => {
                             app.all_categories_on();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char('1'), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char('1'),
+                            ..
+                        } => {
                             app.toggle_level(1);
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char('2'), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char('2'),
+                            ..
+                        } => {
                             app.toggle_level(2);
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char('3'), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char('3'),
+                            ..
+                        } => {
                             app.toggle_level(3);
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char('4'), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char('4'),
+                            ..
+                        } => {
                             app.toggle_level(4);
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char('5'), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char('5'),
+                            ..
+                        } => {
                             app.toggle_level(5);
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char('6'), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char('6'),
+                            ..
+                        } => {
                             app.toggle_level(6);
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char('0'), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char('0'),
+                            ..
+                        } => {
                             app.reset_levels();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char('-'), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char('-'),
+                            ..
+                        } => {
                             app.all_levels_off();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char('n'), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char('n'),
+                            ..
+                        } => {
                             app.toggle_navigation();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char('g'), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char('g'),
+                            ..
+                        } => {
                             app.toggle_guidance();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char('r'), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char('r'),
+                            ..
+                        } => {
                             app.toggle_routing();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char('m'), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char('m'),
+                            ..
+                        } => {
                             app.toggle_mapmatching();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char('w'), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char('w'),
+                            ..
+                        } => {
                             let msg = match app.dump_to_file() {
                                 Ok(filename) => format!("  saved to {}", filename),
                                 Err(e) => format!("  save failed: {}", e),
                             };
-                            app.save_notice = Some((Instant::now() + Duration::from_millis(3000), msg));
+                            app.save_notice =
+                                Some((Instant::now() + Duration::from_millis(3000), msg));
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char('?'), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char('?'),
+                            ..
+                        } => {
                             app.toggle_hint();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Up, .. } | KeyEvent { code: KeyCode::Char('k'), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Up, ..
+                        }
+                        | KeyEvent {
+                            code: KeyCode::Char('k'),
+                            ..
+                        } => {
                             app.scroll_up();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Down, .. } | KeyEvent { code: KeyCode::Char('j'), .. } => {
+                        KeyEvent {
+                            code: KeyCode::Down,
+                            ..
+                        }
+                        | KeyEvent {
+                            code: KeyCode::Char('j'),
+                            ..
+                        } => {
                             app.scroll_down();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::PageUp, .. }
-                        | KeyEvent { code: KeyCode::Char('u'), modifiers: KeyModifiers::CONTROL, .. } => {
+                        KeyEvent {
+                            code: KeyCode::PageUp,
+                            ..
+                        }
+                        | KeyEvent {
+                            code: KeyCode::Char('u'),
+                            modifiers: KeyModifiers::CONTROL,
+                            ..
+                        } => {
                             app.scroll_page_up();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::PageDown, .. }
-                        | KeyEvent { code: KeyCode::Char('d'), modifiers: KeyModifiers::CONTROL, .. } => {
+                        KeyEvent {
+                            code: KeyCode::PageDown,
+                            ..
+                        }
+                        | KeyEvent {
+                            code: KeyCode::Char('d'),
+                            modifiers: KeyModifiers::CONTROL,
+                            ..
+                        } => {
                             app.scroll_page_down();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char('f'), .. } | KeyEvent { code: KeyCode::End, .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char('f'),
+                            ..
+                        }
+                        | KeyEvent {
+                            code: KeyCode::End, ..
+                        } => {
                             app.resume_follow();
                             dirty = true;
                         }
-                        KeyEvent { code: KeyCode::Char('l'), modifiers: KeyModifiers::CONTROL, .. } => {
+                        KeyEvent {
+                            code: KeyCode::Char('l'),
+                            modifiers: KeyModifiers::CONTROL,
+                            ..
+                        } => {
                             app.clear_buffer();
                             dirty = true;
                         }
@@ -579,7 +737,11 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
     let area = frame.area();
 
     let constraints: Vec<Constraint> = if app.search_mode {
-        vec![Constraint::Min(1), Constraint::Length(1), Constraint::Length(1)]
+        vec![
+            Constraint::Min(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ]
     } else {
         vec![Constraint::Min(1), Constraint::Length(1)]
     };
@@ -618,12 +780,17 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
         frame.render_widget(splash(), log_area);
     } else if display.is_empty() {
         let dim = Style::default().fg(Color::DarkGray);
-        let msg = Paragraph::new(Line::from(vec![
-            Span::styled("  no logs match current filters", dim),
-        ]));
+        let msg = Paragraph::new(Line::from(vec![Span::styled(
+            "  no logs match current filters",
+            dim,
+        )]));
         frame.render_widget(msg, log_area);
     } else {
-        let search_highlight = if search_q.is_empty() { None } else { Some(search_q.as_str()) };
+        let search_highlight = if search_q.is_empty() {
+            None
+        } else {
+            Some(search_q.as_str())
+        };
         let items: Vec<ListItem> = display
             .iter()
             .skip(scroll_offset)
@@ -641,13 +808,22 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
             Span::styled(" / ", bar_style),
             Span::styled(app.search_query.clone(), bar_style),
             Span::styled("█", cursor_style),
-            Span::styled("  esc:clear  enter:lock", Style::default().bg(Color::DarkGray).fg(Color::DarkGray).add_modifier(Modifier::BOLD)),
+            Span::styled(
+                "  esc:clear  enter:lock",
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .fg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD),
+            ),
         ]);
         frame.render_widget(Paragraph::new(search_line), area);
     }
 
     let base_style = Style::default().bg(Color::DarkGray).fg(Color::White);
-    let flash_style = Style::default().bg(Color::White).fg(Color::DarkGray).add_modifier(Modifier::BOLD);
+    let flash_style = Style::default()
+        .bg(Color::White)
+        .fg(Color::DarkGray)
+        .add_modifier(Modifier::BOLD);
 
     // Color identifies the category; brightness indicates on/off state
     let toggle_style = |on: bool, key: char| -> Style {
@@ -657,11 +833,18 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
         let style = match key {
             'n' => Style::default().bg(Color::DarkGray).fg(Color::Blue),
             'g' => Style::default().bg(Color::DarkGray).fg(Color::Magenta),
-            'r' => Style::default().bg(Color::DarkGray).fg(Color::Red).add_modifier(Modifier::BOLD),
+            'r' => Style::default()
+                .bg(Color::DarkGray)
+                .fg(Color::Red)
+                .add_modifier(Modifier::BOLD),
             'm' => Style::default().bg(Color::DarkGray).fg(Color::Yellow),
-            _   => Style::default().bg(Color::DarkGray).fg(Color::White),
+            _ => Style::default().bg(Color::DarkGray).fg(Color::White),
         };
-        if on { style } else { style.add_modifier(Modifier::DIM) }
+        if on {
+            style
+        } else {
+            style.add_modifier(Modifier::DIM)
+        }
     };
 
     let mode = if app.follow { "FOLLOW" } else { "PAUSED" };
@@ -686,7 +869,9 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
     };
 
     let quit_confirming = app.quit_pending.map_or(false, |d| Instant::now() < d);
-    let save_msg = app.save_notice.as_ref()
+    let save_msg = app
+        .save_notice
+        .as_ref()
         .filter(|(d, _)| Instant::now() < *d)
         .map(|(_, msg)| msg.as_str());
     let hint = if !app.adb_connected {
@@ -702,37 +887,56 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
     };
 
     let dim_style = Style::default().bg(Color::DarkGray).fg(Color::DarkGray);
-    let level_on  = Style::default().bg(Color::DarkGray).fg(Color::White).add_modifier(Modifier::BOLD);
+    let level_on = Style::default()
+        .bg(Color::DarkGray)
+        .fg(Color::White)
+        .add_modifier(Modifier::BOLD);
     let ls = &app.filter_state.level_state;
 
     let status_line = Line::from(vec![
         Span::styled(" [", base_style),
         Span::styled(
-            if app.filter_state.navigation { "n:on " } else { "n:off" },
+            if app.filter_state.navigation {
+                "n:on "
+            } else {
+                "n:off"
+            },
             toggle_style(app.filter_state.navigation, 'n'),
         ),
         Span::styled(" ", base_style),
         Span::styled(
-            if app.filter_state.guidance { "g:on " } else { "g:off" },
+            if app.filter_state.guidance {
+                "g:on "
+            } else {
+                "g:off"
+            },
             toggle_style(app.filter_state.guidance, 'g'),
         ),
         Span::styled(" ", base_style),
         Span::styled(
-            if app.filter_state.routing { "r:on " } else { "r:off" },
+            if app.filter_state.routing {
+                "r:on "
+            } else {
+                "r:off"
+            },
             toggle_style(app.filter_state.routing, 'r'),
         ),
         Span::styled(" ", base_style),
         Span::styled(
-            if app.filter_state.mapmatching { "m:on " } else { "m:off" },
+            if app.filter_state.mapmatching {
+                "m:on "
+            } else {
+                "m:off"
+            },
             toggle_style(app.filter_state.mapmatching, 'm'),
         ),
         Span::styled("] [", base_style),
         Span::styled("V", if ls.verbose { level_on } else { dim_style }),
-        Span::styled("D", if ls.debug   { level_on } else { dim_style }),
-        Span::styled("I", if ls.info    { level_on } else { dim_style }),
-        Span::styled("W", if ls.warn    { level_on } else { dim_style }),
-        Span::styled("E", if ls.error   { level_on } else { dim_style }),
-        Span::styled("F", if ls.fatal   { level_on } else { dim_style }),
+        Span::styled("D", if ls.debug { level_on } else { dim_style }),
+        Span::styled("I", if ls.info { level_on } else { dim_style }),
+        Span::styled("W", if ls.warn { level_on } else { dim_style }),
+        Span::styled("E", if ls.error { level_on } else { dim_style }),
+        Span::styled("F", if ls.fatal { level_on } else { dim_style }),
         Span::styled(
             format!(
                 "] │ {} / {} │ {}{}{}",
@@ -747,11 +951,20 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
         Span::styled(
             hint,
             if !app.adb_connected {
-                Style::default().bg(Color::Red).fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(Color::Red)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else if quit_confirming {
-                Style::default().bg(Color::Red).fg(Color::White).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(Color::Red)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD)
             } else if save_msg.is_some() {
-                Style::default().bg(Color::Green).fg(Color::Black).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(Color::Green)
+                    .fg(Color::Black)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 base_style
             },
@@ -788,7 +1001,10 @@ fn highlight_search_in_spans(spans: Vec<Span<'static>>, query: &str) -> Vec<Span
             if pos > last {
                 result.push(Span::styled(text[last..pos].to_owned(), base));
             }
-            result.push(Span::styled(text[pos..pos + query_lower.len()].to_owned(), highlight));
+            result.push(Span::styled(
+                text[pos..pos + query_lower.len()].to_owned(),
+                highlight,
+            ));
             last = pos + query_lower.len();
         }
         if last < text.len() {
@@ -800,40 +1016,66 @@ fn highlight_search_in_spans(spans: Vec<Span<'static>>, query: &str) -> Vec<Span
 
 fn splash() -> Paragraph<'static> {
     let red = Style::default().fg(Color::Red);
-    let bold_white = Style::default().fg(Color::White).add_modifier(Modifier::BOLD);
+    let bold_white = Style::default()
+        .fg(Color::White)
+        .add_modifier(Modifier::BOLD);
     let dim = Style::default().fg(Color::DarkGray);
 
-    let key = Style::default().fg(Color::White).add_modifier(Modifier::BOLD);
+    let key = Style::default()
+        .fg(Color::White)
+        .add_modifier(Modifier::BOLD);
 
     let text = Text::from(vec![
         Line::from(""),
-        Line::from(vec![Span::styled(" /\\_/\\  ", red), Span::styled("navcat", bold_white)]),
-        Line::from(vec![Span::styled("( o.o )  ", red), Span::styled("nav log inspector", dim)]),
+        Line::from(vec![
+            Span::styled(" /\\_/\\  ", red),
+            Span::styled("navcat", bold_white),
+        ]),
+        Line::from(vec![
+            Span::styled("( o.o )  ", red),
+            Span::styled("nav log inspector", dim),
+        ]),
         Line::from(vec![Span::styled(" > ^ <", red)]),
         Line::from(""),
         Line::from(vec![
-            Span::styled("  n", key), Span::styled("  navigation  ", dim),
-            Span::styled("g", key),   Span::styled("  guidance   ", dim),
-            Span::styled("r", key),   Span::styled("  routing    ", dim),
-            Span::styled("m", key),   Span::styled("  map-matching", dim),
+            Span::styled("  n", key),
+            Span::styled("  navigation  ", dim),
+            Span::styled("g", key),
+            Span::styled("  guidance   ", dim),
+            Span::styled("r", key),
+            Span::styled("  routing    ", dim),
+            Span::styled("m", key),
+            Span::styled("  map-matching", dim),
         ]),
         Line::from(vec![
-            Span::styled("  ↑↓", key), Span::styled(" scroll   ", dim),
-            Span::styled("f", key),    Span::styled("  follow  ", dim),
-            Span::styled("[", key),    Span::styled("  cat off  ", dim),
-            Span::styled("]", key),    Span::styled("  cat on", dim),
+            Span::styled("  ↑↓", key),
+            Span::styled(" scroll   ", dim),
+            Span::styled("f", key),
+            Span::styled("  follow  ", dim),
+            Span::styled("[", key),
+            Span::styled("  cat off  ", dim),
+            Span::styled("]", key),
+            Span::styled("  cat on", dim),
         ]),
         Line::from(vec![
-            Span::styled("  PgUp/Dn", key), Span::styled(" page     ", dim),
-            Span::styled("/", key),          Span::styled("  search  ", dim),
-            Span::styled("1-6", key),        Span::styled("  lvl toggle  ", dim),
-            Span::styled("0", key),          Span::styled("  lvl reset  ", dim),
-            Span::styled("-", key),          Span::styled("  lvl off", dim),
+            Span::styled("  PgUp/Dn", key),
+            Span::styled(" page     ", dim),
+            Span::styled("/", key),
+            Span::styled("  search  ", dim),
+            Span::styled("1-6", key),
+            Span::styled("  lvl toggle  ", dim),
+            Span::styled("0", key),
+            Span::styled("  lvl reset  ", dim),
+            Span::styled("-", key),
+            Span::styled("  lvl off", dim),
         ]),
         Line::from(vec![
-            Span::styled("  ^l", key), Span::styled(" clear    ", dim),
-            Span::styled("q", key),    Span::styled("  quit    ", dim),
-            Span::styled("?", key),    Span::styled("  help", dim),
+            Span::styled("  ^l", key),
+            Span::styled(" clear    ", dim),
+            Span::styled("q", key),
+            Span::styled("  quit    ", dim),
+            Span::styled("?", key),
+            Span::styled("  help", dim),
         ]),
         Line::from(""),
         Line::from(vec![Span::styled("  waiting for logs...", dim)]),
@@ -867,22 +1109,27 @@ fn ansi_to_line(s: &str, search: Option<&str>) -> Line<'static> {
                 }
             }
             current_style = match code.as_str() {
-                "0m"      => Style::default(),
-                "31m"     => Style::default().fg(Color::Red),
-                "32m"     => Style::default().fg(Color::Green),
-                "33m"     => Style::default().fg(Color::Yellow),
-                "34m"     => Style::default().fg(Color::Blue),
-                "35m"     => Style::default().fg(Color::Magenta),
-                "36m"     => Style::default().fg(Color::Cyan),
-                "37m"     => Style::default().fg(Color::White),
-                "90m"     => Style::default().fg(Color::DarkGray),
-                "2m"      => Style::default().add_modifier(Modifier::DIM),
-                "1;31m"   => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                "1;32m"   => Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
-                "2;31m"   => Style::default().fg(Color::Red).add_modifier(Modifier::DIM),
-                "43m"     => Style::default().bg(Color::Yellow),
-                "1;97;41m" => Style::default().fg(Color::White).bg(Color::Red).add_modifier(Modifier::BOLD),
-                _         => Style::default(),
+                "0m" => Style::default(),
+                "31m" => Style::default().fg(Color::Red),
+                "32m" => Style::default().fg(Color::Green),
+                "33m" => Style::default().fg(Color::Yellow),
+                "34m" => Style::default().fg(Color::Blue),
+                "35m" => Style::default().fg(Color::Magenta),
+                "36m" => Style::default().fg(Color::Cyan),
+                "37m" => Style::default().fg(Color::White),
+                "90m" => Style::default().fg(Color::DarkGray),
+                "2m" => Style::default().add_modifier(Modifier::DIM),
+                "1;31m" => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                "1;32m" => Style::default()
+                    .fg(Color::Green)
+                    .add_modifier(Modifier::BOLD),
+                "2;31m" => Style::default().fg(Color::Red).add_modifier(Modifier::DIM),
+                "43m" => Style::default().bg(Color::Yellow),
+                "1;97;41m" => Style::default()
+                    .fg(Color::White)
+                    .bg(Color::Red)
+                    .add_modifier(Modifier::BOLD),
+                _ => Style::default(),
             };
         } else {
             current_text.push(c);
@@ -900,4 +1147,81 @@ fn ansi_to_line(s: &str, search: Option<&str>) -> Line<'static> {
     };
 
     Line::from(spans)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::application::cli::{Args, VerbosityLevel};
+
+    fn app_with_show_item(show_item: &str) -> AppState {
+        let args = Args {
+            file: None,
+            logcat_levels: "I".to_string(),
+            tags: "SomeTag".to_string(),
+            add_tag: vec![],
+            no_tag_filter: false,
+            debug_level: VerbosityLevel::None,
+            highlighted_items: vec![],
+            show_items: vec![show_item.to_string()],
+            completions: None,
+            version: false,
+        };
+        AppState::new(FilterState::from_args(&args))
+    }
+
+    #[test]
+    fn push_line_retains_non_matching_raw_lines() {
+        let mut app = app_with_show_item("match");
+
+        app.push_line("2024-01-15 10:30:45 1234 5678 I SomeTag: hidden".to_string());
+
+        assert_eq!(app.raw_count(), 1);
+        assert!(app.filtered_lines().is_empty());
+    }
+
+    #[test]
+    fn rebuild_filter_recovers_previously_hidden_lines() {
+        let mut app = app_with_show_item("match");
+
+        app.push_line("2024-01-15 10:30:45 1234 5678 I SomeTag: match".to_string());
+        app.push_line("2024-01-15 10:30:46 1234 5678 I SomeTag: later".to_string());
+
+        assert_eq!(app.filtered_lines().len(), 1);
+
+        app.filter_state.show_items.clear();
+        app.rebuild_filter();
+
+        assert_eq!(app.raw_count(), 2);
+        assert_eq!(app.filtered_lines().len(), 2);
+        assert!(
+            app.filtered_lines()
+                .iter()
+                .any(|line| line.contains("later"))
+        );
+    }
+
+    #[test]
+    fn disconnect_event_updates_status_without_dropping_buffer() {
+        let mut app = app_with_show_item("match");
+        app.push_line("2024-01-15 10:30:45 1234 5678 I SomeTag: match".to_string());
+
+        let consumed_line = app.apply_logcat_event(LogcatEvent::Disconnected);
+
+        assert!(!consumed_line);
+        assert!(!app.adb_connected);
+        assert_eq!(app.raw_count(), 1);
+    }
+
+    #[test]
+    fn connect_event_restores_status_before_new_lines_arrive() {
+        let mut app = app_with_show_item("match");
+        app.adb_connected = false;
+
+        let consumed_line = app.apply_logcat_event(LogcatEvent::Connected);
+
+        assert!(!consumed_line);
+        assert!(app.adb_connected);
+        assert_eq!(app.raw_count(), 0);
+    }
 }
