@@ -27,7 +27,6 @@ impl LogFilter {
     pub fn new(config: FilterConfig) -> Self {
         let mut builder = create_default_highlighter();
 
-        // Add any custom highlighted items from the config
         if !config.highlighted_items.is_empty() {
             builder = builder.add_custom_words(
                 &config
@@ -50,27 +49,27 @@ impl LogFilter {
 
     fn get_level_color(level: &str) -> &'static str {
         match level {
-            "V" => "\x1b[37m",      // White for VERBOSE
-            "D" => "\x1b[36m",      // Cyan for DEBUG
-            "I" => "\x1b[32m",      // Green for INFO
-            "W" => "\x1b[33m",      // Yellow for WARN
-            "E" => "\x1b[31m",      // Red for ERROR
-            "F" => "\x1b[1;97;41m", // Bold white on red background for FATAL
+            "V" => "\x1b[37m",
+            "D" => "\x1b[36m",
+            "I" => "\x1b[32m",
+            "W" => "\x1b[33m",
+            "E" => "\x1b[31m",
+            "F" => "\x1b[1;97;41m",
             _ => RESET_COLOR,
         }
     }
 
     fn get_tag_color(&self, tag: &str) -> &'static str {
         if tag == "AndroidRuntime" {
-            "\x1b[1;31m" // Bold red for crash reporter
+            "\x1b[1;31m"
         } else if self.tags.routing_tags.iter().any(|t| tag.contains(t)) {
-            "\x1b[1;31m" // Bold red for routing (planners, replan)
+            "\x1b[1;31m"
         } else if self.tags.mapmatching_tags.iter().any(|t| tag.contains(t)) {
-            "\x1b[33m" // Yellow for map-matching
+            "\x1b[33m"
         } else if self.tags.guidance_tags.iter().any(|t| tag.contains(t)) {
-            "\x1b[35m" // Magenta for guidance
+            "\x1b[35m"
         } else {
-            "\x1b[34m" // Blue for everything else
+            "\x1b[34m"
         }
     }
 
@@ -92,11 +91,10 @@ impl LogFilter {
     fn is_crash_exception_line(trimmed: &str) -> bool {
         trimmed.starts_with("FATAL EXCEPTION")
             || trimmed.starts_with("Caused by:")
-            // Java exception class: has a dot, has a colon, not an "at " frame or "... N more"
-            || (!trimmed.starts_with("at ")
-                && !trimmed.starts_with("...")
-                && trimmed.contains('.')
-                && trimmed.contains(':'))
+            // Java exception: package.ClassName: message — no space before the colon
+            || trimmed
+                .find(':')
+                .map_or(false, |pos| trimmed[..pos].contains('.') && !trimmed[..pos].contains(' '))
     }
 
     fn is_crash_framework_frame(trimmed: &str) -> bool {
@@ -147,7 +145,6 @@ impl LogFilter {
 
         let (level_idx, tag_idx) = Self::get_level_and_tag_indices(&parts)?;
 
-        // Ensure we have enough parts for the detected format.
         if parts.len() <= tag_idx {
             return None;
         }
@@ -177,7 +174,6 @@ impl LogFilter {
             }
         }
 
-        // Colorize.
         let mut colored_line = String::new();
         for (i, part) in parts.iter().enumerate() {
             if i == level_idx {
@@ -196,7 +192,7 @@ impl LogFilter {
                 } else {
                     colored_line.push_str(&self.message_highlighter.highlight_message(&message));
                 }
-                break; // Skip remaining parts since we've joined them
+                break;
             } else if i < level_idx {
                 colored_line.push_str("\x1b[90m");
                 colored_line.push_str(part);
@@ -235,7 +231,7 @@ impl LogFilter {
                 // Has milliseconds: YYYY-MM-DD HH:MM:SS.mmm +TZ PID TID LEVEL TAG
                 if parts.len() >= 7
                     && Self::looks_like_pid(parts.get(3).copied())
-                    && Self::looks_like_tid(parts.get(4).copied())
+                    && Self::looks_like_pid(parts.get(4).copied())
                 {
                     return Some(LogFormat::FullWithPidTid);
                 }
@@ -244,7 +240,7 @@ impl LogFilter {
                 // No milliseconds: YYYY-MM-DD HH:MM:SS PID TID LEVEL TAG
                 if parts.len() >= 6
                     && Self::looks_like_pid(parts.get(2).copied())
-                    && Self::looks_like_tid(parts.get(3).copied())
+                    && Self::looks_like_pid(parts.get(3).copied())
                 {
                     return Some(LogFormat::Full);
                 }
@@ -259,11 +255,6 @@ impl LogFilter {
     }
 
     fn looks_like_pid(part: Option<&str>) -> bool {
-        part.map(|p| p.chars().all(|c| c.is_ascii_digit()))
-            .unwrap_or(false)
-    }
-
-    fn looks_like_tid(part: Option<&str>) -> bool {
         part.map(|p| p.chars().all(|c| c.is_ascii_digit()))
             .unwrap_or(false)
     }

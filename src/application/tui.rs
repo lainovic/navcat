@@ -85,7 +85,7 @@ impl AppState {
             }
             if let Some(filtered) = self.filter.matches(line) {
                 if is_crash && !last_was_crash {
-                    cache.push(crash_separator());
+                    cache.push(CRASH_SEPARATOR.to_owned());
                 }
                 cache.push(filtered);
                 if is_crash {
@@ -189,7 +189,7 @@ impl AppState {
         }
         if let Some(filtered) = self.filter.matches(&line) {
             if is_crash && !self.last_was_crash {
-                self.filtered_cache.push(crash_separator());
+                self.filtered_cache.push(CRASH_SEPARATOR.to_owned());
             }
             self.filtered_cache.push(filtered);
             self.last_was_crash = is_crash;
@@ -296,13 +296,7 @@ impl AppState {
     }
 
     pub fn all_levels_off(&mut self) {
-        let ls = &mut self.filter_state.level_state;
-        ls.verbose = false;
-        ls.debug = false;
-        ls.info = false;
-        ls.warn = false;
-        ls.error = false;
-        ls.fatal = false;
+        self.filter_state.level_state = LevelState::all_off();
         self.rebuild_filter();
     }
 
@@ -360,14 +354,8 @@ fn run_loop(
     loop {
         // Drain new lines from the adb thread (live mode only)
         if let Some(rx) = receiver {
-            let mut received = false;
             while let Ok(event) = rx.try_recv() {
-                if app.apply_logcat_event(event) {
-                    received = true;
-                }
-                dirty = true;
-            }
-            if received {
+                app.apply_logcat_event(event);
                 dirty = true;
             }
         }
@@ -974,9 +962,8 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
     frame.render_widget(Paragraph::new(status_line), status_area);
 }
 
-fn crash_separator() -> String {
-    "\x1b[31m─── crash ───────────────────────────────────────────────────\x1b[0m".to_string()
-}
+const CRASH_SEPARATOR: &str =
+    "\x1b[31m─── crash ───────────────────────────────────────────────────\x1b[0m";
 
 fn highlight_search_in_spans(spans: Vec<Span<'static>>, query: &str) -> Vec<Span<'static>> {
     if query.is_empty() {
@@ -991,13 +978,11 @@ fn highlight_search_in_spans(spans: Vec<Span<'static>>, query: &str) -> Vec<Span
     for span in spans {
         let text: &str = &span.content;
         let text_lower = text.to_lowercase();
-        if !text_lower.contains(query_lower.as_str()) {
-            result.push(span);
-            continue;
-        }
         let base = span.style;
         let mut last = 0;
+        let mut matched = false;
         for (pos, _) in text_lower.match_indices(query_lower.as_str()) {
+            matched = true;
             if pos > last {
                 result.push(Span::styled(text[last..pos].to_owned(), base));
             }
@@ -1006,6 +991,10 @@ fn highlight_search_in_spans(spans: Vec<Span<'static>>, query: &str) -> Vec<Span
                 highlight,
             ));
             last = pos + query_lower.len();
+        }
+        if !matched {
+            result.push(span);
+            continue;
         }
         if last < text.len() {
             result.push(Span::styled(text[last..].to_owned(), base));

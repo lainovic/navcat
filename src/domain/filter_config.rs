@@ -47,6 +47,17 @@ impl LevelState {
         }
     }
 
+    pub fn all_off() -> Self {
+        Self {
+            verbose: false,
+            debug: false,
+            info: false,
+            warn: false,
+            error: false,
+            fatal: false,
+        }
+    }
+
     pub fn from_str(s: &str) -> Self {
         let mut ls = Self {
             verbose: false,
