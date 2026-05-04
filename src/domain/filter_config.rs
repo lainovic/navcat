@@ -3,6 +3,28 @@ use std::collections::HashSet;
 use crate::application::cli::Args;
 use crate::shared::logger::Logger;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TagCategory {
+    Navigation,
+    Guidance,
+    Routing,
+    MapMatching,
+}
+
+impl TagCategory {
+    pub fn classify(tag: &str) -> Self {
+        if tag.contains("Planner") || tag.contains("Replan") {
+            Self::Routing
+        } else if tag.contains("Match") || tag.contains("Project") {
+            Self::MapMatching
+        } else if tag.contains("Guidance") || tag.contains("Warning") {
+            Self::Guidance
+        } else {
+            Self::Navigation
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct LevelState {
     pub verbose: bool,
@@ -15,19 +37,33 @@ pub struct LevelState {
 
 impl LevelState {
     pub fn default_levels() -> Self {
-        Self { verbose: false, debug: true, info: true, warn: true, error: true, fatal: true }
+        Self {
+            verbose: false,
+            debug: true,
+            info: true,
+            warn: true,
+            error: true,
+            fatal: true,
+        }
     }
 
     pub fn from_str(s: &str) -> Self {
-        let mut ls = Self { verbose: false, debug: false, info: false, warn: false, error: false, fatal: false };
+        let mut ls = Self {
+            verbose: false,
+            debug: false,
+            info: false,
+            warn: false,
+            error: false,
+            fatal: false,
+        };
         for part in s.split(',') {
             match part.trim() {
                 "V" | "VERBOSE" => ls.verbose = true,
-                "D" | "DEBUG"   => ls.debug = true,
-                "I" | "INFO"    => ls.info = true,
-                "W" | "WARN"    => ls.warn = true,
-                "E" | "ERROR"   => ls.error = true,
-                "F" | "FATAL"   => ls.fatal = true,
+                "D" | "DEBUG" => ls.debug = true,
+                "I" | "INFO" => ls.info = true,
+                "W" | "WARN" => ls.warn = true,
+                "E" | "ERROR" => ls.error = true,
+                "F" | "FATAL" => ls.fatal = true,
                 _ => {}
             }
         }
@@ -36,12 +72,24 @@ impl LevelState {
 
     pub fn to_levels(&self) -> Vec<&'static str> {
         let mut v = Vec::new();
-        if self.verbose { v.push("V"); }
-        if self.debug   { v.push("D"); }
-        if self.info    { v.push("I"); }
-        if self.warn    { v.push("W"); }
-        if self.error   { v.push("E"); }
-        if self.fatal   { v.push("F"); }
+        if self.verbose {
+            v.push("V");
+        }
+        if self.debug {
+            v.push("D");
+        }
+        if self.info {
+            v.push("I");
+        }
+        if self.warn {
+            v.push("W");
+        }
+        if self.error {
+            v.push("E");
+        }
+        if self.fatal {
+            v.push("F");
+        }
         v
     }
 }
@@ -74,12 +122,11 @@ impl TagCategories {
 
         for tag in tags {
             all_tags.insert(tag.clone());
-            if tag.contains("Planner") || tag.contains("Replan") {
-                routing_tags.push(tag);
-            } else if tag.contains("Match") || tag.contains("Project") {
-                mapmatching_tags.push(tag);
-            } else if tag.contains("Guidance") || tag.contains("Warning") {
-                guidance_tags.push(tag);
+            match TagCategory::classify(&tag) {
+                TagCategory::Routing => routing_tags.push(tag),
+                TagCategory::MapMatching => mapmatching_tags.push(tag),
+                TagCategory::Guidance => guidance_tags.push(tag),
+                TagCategory::Navigation => {}
             }
             // everything else is blue by default — no bucket needed
         }
@@ -162,14 +209,11 @@ impl FilterState {
         let mut blacklisted_items = Vec::new();
 
         for tag in &self.base_tags {
-            let enabled = if tag.contains("Guidance") || tag.contains("Warning") {
-                self.guidance
-            } else if tag.contains("Planner") {
-                self.routing
-            } else if tag.contains("Match") || tag.contains("Project") {
-                self.mapmatching
-            } else {
-                self.navigation
+            let enabled = match TagCategory::classify(tag) {
+                TagCategory::Navigation => self.navigation,
+                TagCategory::Guidance => self.guidance,
+                TagCategory::Routing => self.routing,
+                TagCategory::MapMatching => self.mapmatching,
             };
             if enabled {
                 tags.push(tag.clone());
@@ -196,5 +240,36 @@ impl FilterState {
 impl FilterConfig {
     pub(crate) fn to_tags(tags_str: &str) -> Vec<String> {
         tags_str.split(',').map(|s| s.trim().to_string()).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn classify_replan_as_routing() {
+        assert_eq!(TagCategory::classify("ReplanEngine"), TagCategory::Routing);
+    }
+
+    #[test]
+    fn classify_project_as_mapmatching() {
+        assert_eq!(
+            TagCategory::classify("ProjectionStep"),
+            TagCategory::MapMatching
+        );
+    }
+
+    #[test]
+    fn classify_guidance_as_guidance() {
+        assert_eq!(TagCategory::classify("LaneGuidance"), TagCategory::Guidance);
+    }
+
+    #[test]
+    fn classify_unknown_as_navigation() {
+        assert_eq!(
+            TagCategory::classify("DefaultRouteTrackingEngine"),
+            TagCategory::Navigation
+        );
     }
 }

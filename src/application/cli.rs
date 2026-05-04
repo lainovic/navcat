@@ -13,7 +13,11 @@ pub enum VerbosityLevel {
 }
 
 #[derive(Parser, Debug)]
-#[command(author, version, about, disable_version_flag = true,
+#[command(
+    author,
+    version,
+    about,
+    disable_version_flag = true,
     long_about = r#"A tool for processing Android logcat output that highlights navigation-related log entries and provides filtering and highlighting capabilities.
 
 EXAMPLES:
@@ -41,7 +45,8 @@ EXAMPLES:
   # Disable tag filtering to see all tags
   navcat --no-tag-filter
 
-  # In live mode, use g/r/m keys to toggle guidance/routing/mapmatching at runtime"#)]
+  # In live mode, use g/r/m keys to toggle guidance/routing/mapmatching at runtime"#
+)]
 pub struct Args {
     /// Path to logcat file (if not provided, runs in live mode)
     #[arg(short, long)]

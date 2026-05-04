@@ -76,7 +76,7 @@ Search (`/`) stacks on top of the category filters — e.g. routing-only logs na
 -n, --no-tag-filter            Show all tags (disable tag filtering)
 -i, --highlighted-items <...>  Terms to highlight in yellow background
 -s, --show-items <...>         Only show lines containing these terms
--v, --verbosity-level <LEVEL>  Logging verbosity: none/error/info/debug [default: none]
+    --debug-level <LEVEL>       Internal logging: none/error/info/debug [default: none]
 ```
 
 ## Shell Completion
@@ -102,7 +102,7 @@ After reloading your shell, `navcat -f <tab>` completes to `.txt` files only.
 
 - Rust 1.70+
 - `adb` on PATH (live mode only)
-- Android device or emulator (live mode only)
+- Android device or emulator in `device` state (live mode only)
 
 ## License
 

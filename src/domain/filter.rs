@@ -50,11 +50,11 @@ impl LogFilter {
 
     fn get_level_color(level: &str) -> &'static str {
         match level {
-            "V" => "\x1b[37m",   // White for VERBOSE
-            "D" => "\x1b[36m",   // Cyan for DEBUG
-            "I" => "\x1b[32m",   // Green for INFO
-            "W" => "\x1b[33m",   // Yellow for WARN
-            "E" => "\x1b[31m",   // Red for ERROR
+            "V" => "\x1b[37m",      // White for VERBOSE
+            "D" => "\x1b[36m",      // Cyan for DEBUG
+            "I" => "\x1b[32m",      // Green for INFO
+            "W" => "\x1b[33m",      // Yellow for WARN
+            "E" => "\x1b[31m",      // Red for ERROR
             "F" => "\x1b[1;97;41m", // Bold white on red background for FATAL
             _ => RESET_COLOR,
         }
@@ -101,10 +101,17 @@ impl LogFilter {
 
     fn is_crash_framework_frame(trimmed: &str) -> bool {
         trimmed.starts_with("...")
-            || ["at android.", "at java.", "at kotlin.", "at com.android.",
-                "at dalvik.", "at sun.", "at libcore."]
-                .iter()
-                .any(|p| trimmed.starts_with(p))
+            || [
+                "at android.",
+                "at java.",
+                "at kotlin.",
+                "at com.android.",
+                "at dalvik.",
+                "at sun.",
+                "at libcore.",
+            ]
+            .iter()
+            .any(|p| trimmed.starts_with(p))
     }
 
     pub fn matches(&self, line: &str) -> Option<String> {
@@ -150,7 +157,11 @@ impl LogFilter {
             return None;
         }
         let line_level = parts[level_idx];
-        if !self.levels.iter().any(|level| level.eq_ignore_ascii_case(line_level)) {
+        if !self
+            .levels
+            .iter()
+            .any(|level| level.eq_ignore_ascii_case(line_level))
+        {
             return None;
         }
 
@@ -248,11 +259,13 @@ impl LogFilter {
     }
 
     fn looks_like_pid(part: Option<&str>) -> bool {
-        part.map(|p| p.chars().all(|c| c.is_ascii_digit())).unwrap_or(false)
+        part.map(|p| p.chars().all(|c| c.is_ascii_digit()))
+            .unwrap_or(false)
     }
 
     fn looks_like_tid(part: Option<&str>) -> bool {
-        part.map(|p| p.chars().all(|c| c.is_ascii_digit())).unwrap_or(false)
+        part.map(|p| p.chars().all(|c| c.is_ascii_digit()))
+            .unwrap_or(false)
     }
 }
 
@@ -286,7 +299,10 @@ mod tests {
         // YYYY-MM-DD HH:MM:SS.mmm +TZ PID TID LEVEL TAG msg
         let line = "2024-01-15 10:30:45.123 +0000 1234 5678 I SomeTag: message";
         let parts: Vec<&str> = line.split_whitespace().collect();
-        assert!(matches!(LogFilter::detect_format(&parts), Some(LogFormat::FullWithPidTid)));
+        assert!(matches!(
+            LogFilter::detect_format(&parts),
+            Some(LogFormat::FullWithPidTid)
+        ));
     }
 
     #[test]
@@ -294,7 +310,10 @@ mod tests {
         // YYYY-MM-DD HH:MM:SS PID TID LEVEL TAG msg
         let line = "2024-01-15 10:30:45 1234 5678 I SomeTag: message";
         let parts: Vec<&str> = line.split_whitespace().collect();
-        assert!(matches!(LogFilter::detect_format(&parts), Some(LogFormat::Full)));
+        assert!(matches!(
+            LogFilter::detect_format(&parts),
+            Some(LogFormat::Full)
+        ));
     }
 
     #[test]
@@ -302,7 +321,10 @@ mod tests {
         // MM-DD HH:MM:SS.mmm PID TID LEVEL TAG msg
         let line = "01-15 10:30:45.123 1234 5678 I SomeTag: message";
         let parts: Vec<&str> = line.split_whitespace().collect();
-        assert!(matches!(LogFilter::detect_format(&parts), Some(LogFormat::Short)));
+        assert!(matches!(
+            LogFilter::detect_format(&parts),
+            Some(LogFormat::Short)
+        ));
     }
 
     #[test]
@@ -310,7 +332,10 @@ mod tests {
         // YYYY-MM-DD HH:MM:SS.mmm+TZ LEVEL TAG: msg
         let line = "2024-01-15 10:30:45.123+0000 I SomeTag: message";
         let parts: Vec<&str> = line.split_whitespace().collect();
-        assert!(matches!(LogFilter::detect_format(&parts), Some(LogFormat::Compact)));
+        assert!(matches!(
+            LogFilter::detect_format(&parts),
+            Some(LogFormat::Compact)
+        ));
     }
 
     #[test]
@@ -416,9 +441,21 @@ mod tests {
     #[test]
     fn matches_stack_trace_lines_pass_through() {
         let filter = make_filter(vec![], vec![], vec![], vec![]);
-        assert!(filter.matches("at com.example.Foo.bar(Foo.kt:42)").is_some());
-        assert!(filter.matches("\tat com.example.Foo.bar(Foo.kt:42)").is_some());
-        assert!(filter.matches("Caused by: java.lang.NullPointerException").is_some());
+        assert!(
+            filter
+                .matches("at com.example.Foo.bar(Foo.kt:42)")
+                .is_some()
+        );
+        assert!(
+            filter
+                .matches("\tat com.example.Foo.bar(Foo.kt:42)")
+                .is_some()
+        );
+        assert!(
+            filter
+                .matches("Caused by: java.lang.NullPointerException")
+                .is_some()
+        );
         assert!(filter.matches("--------- beginning of main").is_none());
     }
 

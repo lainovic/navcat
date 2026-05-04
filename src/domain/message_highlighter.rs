@@ -55,7 +55,11 @@ impl<'a> MessageProcessor<'a> {
                 Logger::debug_fmt("Found red term at pos {}", &[&pos]);
                 if self.is_complete_match(pos, term.len()) {
                     Logger::debug("Complete match!");
-                    matches.push(Match::new(pos, pos + term.len(), highlighter.red_rule.color));
+                    matches.push(Match::new(
+                        pos,
+                        pos + term.len(),
+                        highlighter.red_rule.color,
+                    ));
                 } else {
                     Logger::debug("Not a complete match");
                 }
@@ -68,7 +72,11 @@ impl<'a> MessageProcessor<'a> {
                 Logger::debug_fmt("Found yellow term at pos {}", &[&pos]);
                 if self.is_complete_match(pos, term.len()) {
                     Logger::debug("Complete match!");
-                    matches.push(Match::new(pos, pos + term.len(), highlighter.yellow_rule.color));
+                    matches.push(Match::new(
+                        pos,
+                        pos + term.len(),
+                        highlighter.yellow_rule.color,
+                    ));
                 } else {
                     Logger::debug("Not a complete match");
                 }
@@ -81,7 +89,11 @@ impl<'a> MessageProcessor<'a> {
                 Logger::debug_fmt("Found green term at pos {}", &[&pos]);
                 if self.is_complete_match(pos, term.len()) {
                     Logger::debug("Complete match!");
-                    matches.push(Match::new(pos, pos + term.len(), highlighter.green_rule.color));
+                    matches.push(Match::new(
+                        pos,
+                        pos + term.len(),
+                        highlighter.green_rule.color,
+                    ));
                 } else {
                     Logger::debug("Not a complete match");
                 }
@@ -163,10 +175,10 @@ impl<'a> MessageProcessor<'a> {
             .iter()
             .max_by_key(|m| {
                 match m.color {
-                    c if c == highlighter.red_rule.color => 3,    // Red: highest priority
+                    c if c == highlighter.red_rule.color => 3, // Red: highest priority
                     c if c == highlighter.yellow_rule.color => 2, // Yellow: second
-                    c if c == highlighter.green_rule.color => 1,  // Green: third
-                    _ => 0,                                        // Custom: lowest priority
+                    c if c == highlighter.green_rule.color => 1, // Green: third
+                    _ => 0,                                    // Custom: lowest priority
                 }
             })
             .cloned()
