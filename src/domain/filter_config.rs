@@ -107,7 +107,7 @@ impl LevelState {
 }
 
 #[derive(Debug)]
-pub struct FilterConfig {
+pub(crate) struct FilterConfig {
     pub levels: Vec<&'static str>,
     pub tags: TagCategories,
     pub blacklisted_items: Vec<String>,
@@ -222,7 +222,7 @@ impl FilterState {
         }
     }
 
-    pub fn to_filter_config(&self) -> FilterConfig {
+    pub(crate) fn to_filter_config(&self) -> FilterConfig {
         // Additive model: each toggle owns its tag bucket exclusively.
         // Tags are assigned to exactly one category by pattern, and only
         // tags in enabled categories are passed to the filter. This means

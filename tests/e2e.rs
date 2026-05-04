@@ -90,7 +90,7 @@ fn base_args(tags: &str) -> Args {
 fn lowercase_tags_work_through_cli_to_filter_pipeline() {
     let args = base_args("guidance,replan");
     let state = FilterState::from_args(&args);
-    let filter = LogFilter::new(state.to_filter_config());
+    let filter = LogFilter::from_state(&state);
 
     let guidance = "2024-01-15 10:30:45 1234 5678 I LaneGuidance: hello";
     let replan = "2024-01-15 10:30:46 1234 5678 I ReplanEngine: hello";

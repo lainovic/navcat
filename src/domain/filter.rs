@@ -1,10 +1,124 @@
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 
-use crate::domain::FilterConfig;
-use crate::domain::filter_config::{TagCategories, TagCategory};
-use crate::domain::highlight_builder::create_default_highlighter;
+use crate::domain::filter_config::{FilterConfig, FilterState, TagCategories, TagCategory};
 use crate::domain::message_highlighter::MessageHighlighter;
+
+struct HighlightBuilder {
+    red_words: std::collections::HashSet<String>,
+    green_words: std::collections::HashSet<String>,
+    yellow_words: std::collections::HashSet<String>,
+    custom_words: std::collections::HashSet<String>,
+}
+
+impl HighlightBuilder {
+    fn new() -> Self {
+        Self {
+            red_words: std::collections::HashSet::new(),
+            green_words: std::collections::HashSet::new(),
+            yellow_words: std::collections::HashSet::new(),
+            custom_words: std::collections::HashSet::new(),
+        }
+    }
+
+    fn add_red_words(mut self, words: &[&str]) -> Self {
+        for word in words {
+            self.red_words.insert(word.to_lowercase());
+        }
+        self
+    }
+
+    fn add_green_words(mut self, words: &[&str]) -> Self {
+        for word in words {
+            self.green_words.insert(word.to_lowercase());
+        }
+        self
+    }
+
+    fn add_yellow_words(mut self, words: &[&str]) -> Self {
+        for word in words {
+            self.yellow_words.insert(word.to_lowercase());
+        }
+        self
+    }
+
+    fn add_custom_words(mut self, words: &[&str]) -> Self {
+        for word in words {
+            self.custom_words.insert(word.to_lowercase());
+        }
+        self
+    }
+
+    fn build(self) -> MessageHighlighter {
+        MessageHighlighter::new(
+            self.red_words,
+            self.green_words,
+            self.yellow_words,
+            self.custom_words,
+        )
+    }
+}
+
+fn create_default_highlighter() -> HighlightBuilder {
+    HighlightBuilder::new()
+        .add_red_words(&[
+            "error",
+            "removed",
+            "unfollowed",
+            "not followed",
+            "unvisited",
+            "deviation",
+            "off-road",
+            "off-route",
+        ])
+        .add_green_words(&[
+            "success",
+            "created",
+            "added",
+            "followed",
+            "following",
+            "visited",
+            "planned",
+            "arrived",
+            "departed",
+            "started",
+            "starting",
+            "resumed",
+            "resuming",
+            "stopped",
+            "stopping",
+        ])
+        .add_yellow_words(&[
+            "warning",
+            "updated",
+            "changed",
+            "segment",
+            "old",
+            "new",
+            "map matching",
+            "projected",
+            "matchlocation",
+            "matched",
+            "replan",
+            "should replan",
+            "refresh",
+            "back to route",
+            "replanning",
+            "language change",
+            "increment",
+            "progress",
+            "current location",
+            "distancealongroute",
+            "traffic jam",
+            "instruction",
+            "guidance",
+            "lane guidance",
+            "lane level guidance",
+            "route",
+            "waypoint",
+            "planning route",
+        ])
+}
 
 #[derive(Debug)]
 enum LogFormat {
@@ -47,7 +161,11 @@ pub struct LogFilter {
 }
 
 impl LogFilter {
-    pub fn new(config: FilterConfig) -> Self {
+    pub fn from_state(state: &FilterState) -> Self {
+        Self::new(state.to_filter_config())
+    }
+
+    pub(crate) fn new(config: FilterConfig) -> Self {
         let mut builder = create_default_highlighter();
 
         if !config.highlighted_items.is_empty() {

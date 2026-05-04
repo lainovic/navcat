@@ -1,9 +1,30 @@
 use std::collections::HashSet;
 
+use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::Span;
 
-use crate::domain::highlight_builder::HighlightPriority;
 use crate::shared::logger::Logger;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum HighlightPriority {
+    Custom = 0,
+    Green = 1,
+    Yellow = 2,
+    Red = 3,
+}
+
+impl HighlightPriority {
+    pub fn style(self) -> Style {
+        match self {
+            Self::Red => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            Self::Green => Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+            Self::Yellow => Style::default().fg(Color::Yellow),
+            Self::Custom => Style::default().bg(Color::Yellow),
+        }
+    }
+}
 
 #[derive(Debug, Clone)]
 struct HighlightRule {
@@ -192,7 +213,6 @@ impl MessageHighlighter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::highlight_builder::HighlightPriority;
 
     fn make_highlighter(
         red: &[&str],

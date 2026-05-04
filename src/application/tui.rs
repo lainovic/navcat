@@ -48,7 +48,7 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(filter_state: FilterState) -> Self {
-        let filter = LogFilter::new(filter_state.to_filter_config());
+        let filter = LogFilter::from_state(&filter_state);
         Self {
             raw_buffer: Vec::new(),
             filtered_cache: Vec::new(),
@@ -70,7 +70,7 @@ impl AppState {
     }
 
     fn rebuild_filter(&mut self) {
-        self.filter = LogFilter::new(self.filter_state.to_filter_config());
+        self.filter = LogFilter::from_state(&self.filter_state);
         self.rebuild_filtered_cache();
     }
 
@@ -231,8 +231,10 @@ impl AppState {
         }
         if self.raw_buffer.len() > MAX_BUFFER {
             self.raw_buffer.drain(..TRIM_SIZE);
-            self.scroll_offset = self.scroll_offset.saturating_sub(TRIM_SIZE);
+            let visible_before = self.search_result.len();
             self.rebuild_filtered_cache();
+            let visible_removed = visible_before.saturating_sub(self.search_result.len());
+            self.scroll_offset = self.scroll_offset.saturating_sub(visible_removed);
         }
     }
 
@@ -788,12 +790,12 @@ fn render_log_list(
     frame.render_widget(List::new(items), area);
 }
 
-fn render_search_bar(app: &AppState, frame: &mut ratatui::Frame, area: Rect) {
+fn build_search_bar_line(query: &str) -> Line<'static> {
     let bar_style = Style::default().bg(Color::DarkGray).fg(Color::White);
     let cursor_style = Style::default().bg(Color::White).fg(Color::DarkGray);
-    let search_line = Line::from(vec![
+    Line::from(vec![
         Span::styled(" / ", bar_style),
-        Span::styled(app.search_query.clone(), bar_style),
+        Span::styled(query.to_owned(), bar_style),
         Span::styled("█", cursor_style),
         Span::styled(
             "  esc:clear  enter:lock",
@@ -802,44 +804,41 @@ fn render_search_bar(app: &AppState, frame: &mut ratatui::Frame, area: Rect) {
                 .fg(Color::DarkGray)
                 .add_modifier(Modifier::BOLD),
         ),
-    ]);
-    frame.render_widget(Paragraph::new(search_line), area);
+    ])
 }
 
-fn render_status_bar(
-    app: &AppState,
-    display_len: usize,
-    scroll_offset: usize,
-    height: usize,
-    frame: &mut ratatui::Frame,
-    area: Rect,
-) {
-    let base_style = Style::default().bg(Color::DarkGray).fg(Color::White);
+fn render_search_bar(app: &AppState, frame: &mut ratatui::Frame, area: Rect) {
+    frame.render_widget(Paragraph::new(build_search_bar_line(&app.search_query)), area);
+}
+
+fn category_toggle_style(app: &AppState, on: bool, key: char) -> Style {
     let flash_style = Style::default()
         .bg(Color::White)
         .fg(Color::DarkGray)
         .add_modifier(Modifier::BOLD);
-
-    let toggle_style = |on: bool, key: char| -> Style {
-        if app.is_flashing(key) {
-            return flash_style;
-        }
-        let style = match key {
-            'n' => Style::default().bg(Color::DarkGray).fg(Color::Blue),
-            'g' => Style::default().bg(Color::DarkGray).fg(Color::Magenta),
-            'r' => Style::default()
-                .bg(Color::DarkGray)
-                .fg(Color::Red)
-                .add_modifier(Modifier::BOLD),
-            'm' => Style::default().bg(Color::DarkGray).fg(Color::Yellow),
-            _ => Style::default().bg(Color::DarkGray).fg(Color::White),
-        };
-        if on {
-            style
-        } else {
-            style.add_modifier(Modifier::DIM)
-        }
+    if app.is_flashing(key) {
+        return flash_style;
+    }
+    let style = match key {
+        'n' => Style::default().bg(Color::DarkGray).fg(Color::Blue),
+        'g' => Style::default().bg(Color::DarkGray).fg(Color::Magenta),
+        'r' => Style::default()
+            .bg(Color::DarkGray)
+            .fg(Color::Red)
+            .add_modifier(Modifier::BOLD),
+        'm' => Style::default().bg(Color::DarkGray).fg(Color::Yellow),
+        _ => Style::default().bg(Color::DarkGray).fg(Color::White),
     };
+    if on { style } else { style.add_modifier(Modifier::DIM) }
+}
+
+fn build_status_line(
+    app: &AppState,
+    display_len: usize,
+    scroll_offset: usize,
+    height: usize,
+) -> Line<'static> {
+    let base_style = Style::default().bg(Color::DarkGray).fg(Color::White);
 
     let mode = if app.follow { "FOLLOW" } else { "PAUSED" };
 
@@ -868,16 +867,16 @@ fn render_status_bar(
         .as_ref()
         .filter(|(d, _)| Instant::now() < *d)
         .map(|(_, msg)| msg.as_str());
-    let hint = if !app.adb_connected {
-        "  adb disconnected — reconnecting..."
+    let hint: String = if !app.adb_connected {
+        "  adb disconnected — reconnecting...".to_owned()
     } else if let Some(msg) = save_msg {
-        msg
+        msg.to_owned()
     } else if quit_confirming {
-        "  press q again to quit"
+        "  press q again to quit".to_owned()
     } else if app.show_hint {
-        "  n/g/r/m:cat  [:cat off  ]:cat on  1-6:lvl  0:lvl reset  -:lvl off  w:save  /:search  ↑↓jk:scroll  PgUp/Dn ^u/d:page  f:follow  ^l:clear  qq:quit  ?:hide"
+        "  n/g/r/m:cat  [:cat off  ]:cat on  1-6:lvl  0:lvl reset  -:lvl off  w:save  /:search  ↑↓jk:scroll  PgUp/Dn ^u/d:page  f:follow  ^l:clear  qq:quit  ?:hide".to_owned()
     } else {
-        "  ?"
+        "  ?".to_owned()
     };
 
     let dim_style = Style::default().bg(Color::DarkGray).fg(Color::DarkGray);
@@ -887,42 +886,26 @@ fn render_status_bar(
         .add_modifier(Modifier::BOLD);
     let ls = &app.filter_state.level_state;
 
-    let status_line = Line::from(vec![
+    Line::from(vec![
         Span::styled(" [", base_style),
         Span::styled(
-            if app.filter_state.navigation {
-                "n:on "
-            } else {
-                "n:off"
-            },
-            toggle_style(app.filter_state.navigation, 'n'),
+            if app.filter_state.navigation { "n:on " } else { "n:off" },
+            category_toggle_style(app, app.filter_state.navigation, 'n'),
         ),
         Span::styled(" ", base_style),
         Span::styled(
-            if app.filter_state.guidance {
-                "g:on "
-            } else {
-                "g:off"
-            },
-            toggle_style(app.filter_state.guidance, 'g'),
+            if app.filter_state.guidance { "g:on " } else { "g:off" },
+            category_toggle_style(app, app.filter_state.guidance, 'g'),
         ),
         Span::styled(" ", base_style),
         Span::styled(
-            if app.filter_state.routing {
-                "r:on "
-            } else {
-                "r:off"
-            },
-            toggle_style(app.filter_state.routing, 'r'),
+            if app.filter_state.routing { "r:on " } else { "r:off" },
+            category_toggle_style(app, app.filter_state.routing, 'r'),
         ),
         Span::styled(" ", base_style),
         Span::styled(
-            if app.filter_state.mapmatching {
-                "m:on "
-            } else {
-                "m:off"
-            },
-            toggle_style(app.filter_state.mapmatching, 'm'),
+            if app.filter_state.mapmatching { "m:on " } else { "m:off" },
+            category_toggle_style(app, app.filter_state.mapmatching, 'm'),
         ),
         Span::styled("] [", base_style),
         Span::styled("V", if ls.verbose { level_on } else { dim_style }),
@@ -963,9 +946,21 @@ fn render_status_bar(
                 base_style
             },
         ),
-    ]);
+    ])
+}
 
-    frame.render_widget(Paragraph::new(status_line), area);
+fn render_status_bar(
+    app: &AppState,
+    display_len: usize,
+    scroll_offset: usize,
+    height: usize,
+    frame: &mut ratatui::Frame,
+    area: Rect,
+) {
+    frame.render_widget(
+        Paragraph::new(build_status_line(app, display_len, scroll_offset, height)),
+        area,
+    );
 }
 
 fn highlight_search_in_spans(spans: Vec<Span<'static>>, query: &str) -> Vec<Span<'static>> {
@@ -1081,6 +1076,23 @@ mod tests {
     use super::*;
     use crate::application::cli::{Args, VerbosityLevel};
 
+    fn app_no_tag_filter() -> AppState {
+        let args = Args {
+            file: None,
+            logcat_levels: "VDIWEF".to_string(),
+            tags: String::new(),
+            add_tag: vec![],
+            no_tag_filter: true,
+            serial: None,
+            debug_level: VerbosityLevel::None,
+            highlighted_items: vec![],
+            show_items: vec![],
+            completions: None,
+            version: false,
+        };
+        AppState::new(FilterState::from_args(&args))
+    }
+
     fn app_with_show_item(show_item: &str) -> AppState {
         let args = Args {
             file: None,
@@ -1151,6 +1163,91 @@ mod tests {
         assert!(!consumed_line);
         assert!(app.adb_connected);
         assert_eq!(app.raw_count(), 0);
+    }
+
+    fn spans_text(line: &Line) -> String {
+        line.spans.iter().map(|s| s.content.as_ref()).collect()
+    }
+
+    #[test]
+    fn search_bar_line_contains_query_and_cursor() {
+        let line = build_search_bar_line("hello");
+        let text = spans_text(&line);
+        assert!(text.contains("hello"));
+        assert!(text.contains("█"));
+        assert!(text.contains("esc:clear"));
+    }
+
+    #[test]
+    fn search_bar_line_empty_query_still_has_cursor() {
+        let line = build_search_bar_line("");
+        let text = spans_text(&line);
+        assert!(text.contains("█"));
+    }
+
+    #[test]
+    fn status_line_shows_follow_by_default() {
+        let app = app_no_tag_filter();
+        let line = build_status_line(&app, 0, 0, 10);
+        assert!(spans_text(&line).contains("FOLLOW"));
+    }
+
+    #[test]
+    fn status_line_shows_paused_after_scroll() {
+        let mut app = app_no_tag_filter();
+        app.visible_height = 10;
+        for i in 0..20 {
+            app.push_line(format!("2024-01-15 10:30:45 1234 5678 I Tag: line {}", i));
+        }
+        app.scroll_up();
+        let line = build_status_line(&app, app.search_result.len(), app.scroll_offset, 10);
+        assert!(spans_text(&line).contains("PAUSED"));
+    }
+
+    #[test]
+    fn status_line_shows_disconnected_hint_when_adb_disconnected() {
+        let mut app = app_no_tag_filter();
+        app.adb_connected = false;
+        let line = build_status_line(&app, 0, 0, 10);
+        assert!(spans_text(&line).contains("adb disconnected"));
+    }
+
+    #[test]
+    fn status_line_scroll_position_shows_percentage() {
+        let mut app = app_no_tag_filter();
+        app.visible_height = 10;
+        for i in 0..100 {
+            app.push_line(format!("2024-01-15 10:30:45 1234 5678 I Tag: line {}", i));
+        }
+        app.scroll_up();
+        let offset = app.scroll_offset;
+        let display_len = app.search_result.len();
+        let line = build_status_line(&app, display_len, offset, 10);
+        let text = spans_text(&line);
+        assert!(text.contains('%') || text.contains("bot") || text.contains("top"));
+    }
+
+    #[test]
+    fn scroll_offset_unchanged_when_trimmed_lines_are_all_filtered_out() {
+        // The first TRIM_SIZE raw lines don't pass the filter.
+        // When they're drained on trim, zero visible lines are lost,
+        // so scroll_offset must not decrease.
+        let mut app = app_with_show_item("match");
+        app.visible_height = 10;
+
+        for _ in 0..TRIM_SIZE {
+            app.push_line("2024-01-15 10:30:45 1234 5678 I SomeTag: other".to_string());
+        }
+        for _ in 0..(MAX_BUFFER - TRIM_SIZE) {
+            app.push_line("2024-01-15 10:30:45 1234 5678 I SomeTag: match".to_string());
+        }
+
+        app.scroll_up();
+        let offset_before = app.scroll_offset;
+
+        app.push_line("2024-01-15 10:30:45 1234 5678 I SomeTag: match".to_string());
+
+        assert_eq!(app.scroll_offset, offset_before);
     }
 
     #[test]
