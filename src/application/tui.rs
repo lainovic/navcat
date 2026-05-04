@@ -512,11 +512,7 @@ fn run_loop(
                             modifiers: KeyModifiers::SHIFT,
                             ..
                         } => {
-                            if c == 'f' {
-                                app.resume_follow();
-                            } else {
-                                app.search_push(c);
-                            }
+                            app.search_push(c);
                         }
                         _ => {
                             dirty = false;
@@ -838,7 +834,11 @@ fn render_status_bar(
             'm' => Style::default().bg(Color::DarkGray).fg(Color::Yellow),
             _ => Style::default().bg(Color::DarkGray).fg(Color::White),
         };
-        if on { style } else { style.add_modifier(Modifier::DIM) }
+        if on {
+            style
+        } else {
+            style.add_modifier(Modifier::DIM)
+        }
     };
 
     let mode = if app.follow { "FOLLOW" } else { "PAUSED" };
@@ -890,22 +890,38 @@ fn render_status_bar(
     let status_line = Line::from(vec![
         Span::styled(" [", base_style),
         Span::styled(
-            if app.filter_state.navigation { "n:on " } else { "n:off" },
+            if app.filter_state.navigation {
+                "n:on "
+            } else {
+                "n:off"
+            },
             toggle_style(app.filter_state.navigation, 'n'),
         ),
         Span::styled(" ", base_style),
         Span::styled(
-            if app.filter_state.guidance { "g:on " } else { "g:off" },
+            if app.filter_state.guidance {
+                "g:on "
+            } else {
+                "g:off"
+            },
             toggle_style(app.filter_state.guidance, 'g'),
         ),
         Span::styled(" ", base_style),
         Span::styled(
-            if app.filter_state.routing { "r:on " } else { "r:off" },
+            if app.filter_state.routing {
+                "r:on "
+            } else {
+                "r:off"
+            },
             toggle_style(app.filter_state.routing, 'r'),
         ),
         Span::styled(" ", base_style),
         Span::styled(
-            if app.filter_state.mapmatching { "m:on " } else { "m:off" },
+            if app.filter_state.mapmatching {
+                "m:on "
+            } else {
+                "m:off"
+            },
             toggle_style(app.filter_state.mapmatching, 'm'),
         ),
         Span::styled("] [", base_style),
@@ -1135,5 +1151,16 @@ mod tests {
         assert!(!consumed_line);
         assert!(app.adb_connected);
         assert_eq!(app.raw_count(), 0);
+    }
+
+    #[test]
+    fn search_mode_can_store_letter_f() {
+        let mut app = app_with_show_item("match");
+
+        app.enter_search();
+        app.search_push('f');
+
+        assert!(app.search_mode);
+        assert_eq!(app.search_query, "f");
     }
 }

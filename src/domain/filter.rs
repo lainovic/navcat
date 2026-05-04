@@ -472,15 +472,21 @@ mod tests {
     #[test]
     fn matches_stack_trace_lines_pass_through() {
         let filter = make_filter(vec![], vec![], vec![], vec![]);
-        assert!(filter
-            .matches("at com.example.Foo.bar(Foo.kt:42)")
-            .is_some());
-        assert!(filter
-            .matches("\tat com.example.Foo.bar(Foo.kt:42)")
-            .is_some());
-        assert!(filter
-            .matches("Caused by: java.lang.NullPointerException")
-            .is_some());
+        assert!(
+            filter
+                .matches("at com.example.Foo.bar(Foo.kt:42)")
+                .is_some()
+        );
+        assert!(
+            filter
+                .matches("\tat com.example.Foo.bar(Foo.kt:42)")
+                .is_some()
+        );
+        assert!(
+            filter
+                .matches("Caused by: java.lang.NullPointerException")
+                .is_some()
+        );
         assert!(filter.matches("--------- beginning of main").is_none());
     }
 

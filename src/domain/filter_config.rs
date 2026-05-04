@@ -155,9 +155,11 @@ impl TagCategories {
             TagCategory::MapMatching,
             TagCategory::Guidance,
         ] {
-            if self.tags.iter().any(|(t, &cat)| {
-                cat == priority && tag_lower.contains(&t.to_ascii_lowercase())
-            }) {
+            if self
+                .tags
+                .iter()
+                .any(|(t, &cat)| cat == priority && tag_lower.contains(&t.to_ascii_lowercase()))
+            {
                 return priority;
             }
         }

@@ -47,6 +47,7 @@ enum DeviceCheck {
     Unready,
     Missing,
     MultipleReady,
+    RequestedSerialMissing,
 }
 
 pub fn check_adb_available() -> Result<(), Box<dyn Error>> {
@@ -73,6 +74,10 @@ pub fn check_device_connected(serial: Option<&str>) -> Result<(), Box<dyn Error>
         DeviceCheck::MultipleReady => {
             Err("Multiple adb devices are ready. Re-run with --serial <device-serial>.".into())
         }
+        DeviceCheck::RequestedSerialMissing => Err(
+            "Requested adb serial was not found. Re-run with --serial <device-serial> using an attached device."
+                .into(),
+        ),
         DeviceCheck::Missing => {
             Err("No Android devices found. Please connect a device or start an emulator.".into())
         }
@@ -101,7 +106,7 @@ fn parse_adb_devices_output(output: &str, serial: Option<&str>) -> DeviceCheck {
             return DeviceCheck::Ready;
         }
         return if saw_any_device {
-            DeviceCheck::Unready
+            DeviceCheck::RequestedSerialMissing
         } else {
             DeviceCheck::Missing
         };
@@ -327,6 +332,15 @@ mod tests {
         assert_eq!(
             parse_adb_devices_output(output, Some("emulator-5556")),
             DeviceCheck::Ready
+        );
+    }
+
+    #[test]
+    fn adb_devices_report_missing_requested_serial() {
+        let output = "List of devices attached\nemulator-5554\tdevice\n";
+        assert_eq!(
+            parse_adb_devices_output(output, Some("emulator-5556")),
+            DeviceCheck::RequestedSerialMissing
         );
     }
 }

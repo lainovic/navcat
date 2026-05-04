@@ -70,6 +70,7 @@ Search (`/`) stacks on top of the category filters — e.g. routing-only logs na
 
 ```
 -f, --file <FILE>              Load a logcat file instead of live mode
+-    --serial <SERIAL>         Target adb device serial for live mode
 -l, --logcat-levels <LEVELS>   Log levels to show, comma-separated [default: I,D,E,W]
 -t, --tags <TAGS>              Override the default tag filter list
 -a, --add-tag <TAG>            Add tags on top of the default list

@@ -16,7 +16,9 @@ impl HighlightPriority {
     pub fn style(self) -> Style {
         match self {
             Self::Red => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-            Self::Green => Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+            Self::Green => Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
             Self::Yellow => Style::default().fg(Color::Yellow),
             Self::Custom => Style::default().bg(Color::Yellow),
         }
