@@ -45,6 +45,9 @@ EXAMPLES:
   # Disable tag filtering to see all tags
   navcat --no-tag-filter
 
+  # Select a specific device when multiple are connected
+  navcat --serial emulator-5554
+
   # In live mode, use g/r/m keys to toggle guidance/routing/mapmatching at runtime"#
 )]
 pub struct Args {
@@ -86,6 +89,10 @@ pub struct Args {
     /// Disable tag filtering to show all tags
     #[arg(short, long)]
     pub no_tag_filter: bool,
+
+    /// Target adb device serial for live mode
+    #[arg(long)]
+    pub serial: Option<String>,
 
     /// navcat internal debug logging; output goes to /tmp/navcat.log
     #[arg(long, default_value = "none")]

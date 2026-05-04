@@ -441,6 +441,13 @@ mod tests {
     }
 
     #[test]
+    fn matches_show_item_is_case_insensitive() {
+        let filter = make_filter(vec!["I"], vec![], vec![], vec!["error"]);
+        let line = "2024-01-15 10:30:45 1234 5678 I SomeTag: ERROR triggered";
+        assert!(filter.matches(line).is_some());
+    }
+
+    #[test]
     fn matches_rejects_line_missing_show_item() {
         let filter = make_filter(vec![], vec![], vec![], vec!["replan"]);
         let line = "2024-01-15 10:30:45 1234 5678 I SomeTag: normal progress update";

@@ -191,9 +191,14 @@ impl FilterState {
         } else {
             FilterConfig::to_tags(&args.tags)
         };
-        for tag in &args.add_tag {
-            base_tags.push(tag.clone());
-        }
+        base_tags.extend(
+            args.add_tag
+                .iter()
+                .map(String::as_str)
+                .map(str::trim)
+                .filter(|tag| !tag.is_empty())
+                .map(ToOwned::to_owned),
+        );
 
         Logger::info_fmt("Base tags:", &[&base_tags]);
 
@@ -201,7 +206,11 @@ impl FilterState {
             level_state,
             base_tags,
             highlighted_items: args.highlighted_items.clone(),
-            show_items: args.show_items.clone(),
+            show_items: args
+                .show_items
+                .iter()
+                .map(|s| s.to_ascii_lowercase())
+                .collect(),
             no_tag_filter: args.no_tag_filter,
             navigation: true,
             guidance: true,
@@ -299,5 +308,27 @@ mod tests {
     #[test]
     fn to_tags_drops_empty_entries() {
         assert_eq!(FilterConfig::to_tags("foo, ,bar,,"), vec!["foo", "bar"]);
+    }
+
+    #[test]
+    fn from_args_drops_empty_add_tags_and_lowercases_show_items() {
+        let args = Args {
+            file: None,
+            logcat_levels: "I".to_string(),
+            tags: "foo".to_string(),
+            add_tag: vec!["".to_string(), " Bar ".to_string()],
+            no_tag_filter: false,
+            serial: None,
+            debug_level: crate::application::cli::VerbosityLevel::None,
+            highlighted_items: vec![],
+            show_items: vec!["Error".to_string()],
+            completions: None,
+            version: false,
+        };
+
+        let state = FilterState::from_args(&args);
+
+        assert_eq!(state.base_tags, vec!["foo", "Bar"]);
+        assert_eq!(state.show_items, vec!["error"]);
     }
 }

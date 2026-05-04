@@ -1169,6 +1169,7 @@ mod tests {
             tags: "SomeTag".to_string(),
             add_tag: vec![],
             no_tag_filter: false,
+            serial: None,
             debug_level: VerbosityLevel::None,
             highlighted_items: vec![],
             show_items: vec![show_item.to_string()],

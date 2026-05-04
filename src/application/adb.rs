@@ -46,6 +46,7 @@ enum DeviceCheck {
     Ready,
     Unready,
     Missing,
+    MultipleReady,
 }
 
 pub fn check_adb_available() -> Result<(), Box<dyn Error>> {
@@ -61,22 +62,26 @@ pub fn check_adb_available() -> Result<(), Box<dyn Error>> {
     }
 }
 
-pub fn check_device_connected() -> Result<(), Box<dyn Error>> {
+pub fn check_device_connected(serial: Option<&str>) -> Result<(), Box<dyn Error>> {
     let output = Command::new(adb_program()).arg("devices").output()?;
-    match parse_adb_devices_output(&String::from_utf8_lossy(&output.stdout)) {
+    match parse_adb_devices_output(&String::from_utf8_lossy(&output.stdout), serial) {
         DeviceCheck::Ready => Ok(()),
         DeviceCheck::Unready => Err(
             "Android device detected, but it is not ready. Check adb authorization / device state."
                 .into(),
         ),
+        DeviceCheck::MultipleReady => {
+            Err("Multiple adb devices are ready. Re-run with --serial <device-serial>.".into())
+        }
         DeviceCheck::Missing => {
             Err("No Android devices found. Please connect a device or start an emulator.".into())
         }
     }
 }
 
-fn parse_adb_devices_output(output: &str) -> DeviceCheck {
+fn parse_adb_devices_output(output: &str, serial: Option<&str>) -> DeviceCheck {
     let mut saw_any_device = false;
+    let mut ready_devices = Vec::new();
 
     for line in output.lines().skip(1) {
         let trimmed = line.trim();
@@ -84,9 +89,29 @@ fn parse_adb_devices_output(output: &str) -> DeviceCheck {
             continue;
         }
         saw_any_device = true;
-        if trimmed.ends_with("\tdevice") {
+        if let Some((device_serial, state)) = trimmed.split_once('\t') {
+            if state == "device" {
+                ready_devices.push(device_serial);
+            }
+        }
+    }
+
+    if let Some(serial) = serial {
+        if ready_devices.iter().any(|device| *device == serial) {
             return DeviceCheck::Ready;
         }
+        return if saw_any_device {
+            DeviceCheck::Unready
+        } else {
+            DeviceCheck::Missing
+        };
+    }
+
+    if ready_devices.len() == 1 {
+        return DeviceCheck::Ready;
+    }
+    if ready_devices.len() > 1 {
+        return DeviceCheck::MultipleReady;
     }
 
     if saw_any_device {
@@ -96,21 +121,40 @@ fn parse_adb_devices_output(output: &str) -> DeviceCheck {
     }
 }
 
-fn logcat_args() -> Vec<&'static str> {
-    vec!["logcat", "-v", "threadtime", "-T", "0"]
+fn logcat_args(serial: Option<&str>) -> Vec<String> {
+    let mut args = Vec::new();
+    if let Some(serial) = serial {
+        args.push("-s".to_string());
+        args.push(serial.to_string());
+    }
+    args.extend(
+        ["logcat", "-v", "threadtime", "-T", "0"]
+            .into_iter()
+            .map(str::to_string),
+    );
+    args
 }
 
 fn adb_program() -> String {
     std::env::var("NAVCAT_ADB").unwrap_or_else(|_| "adb".to_string())
 }
 
-fn spawn_adb_logcat(stderr: Stdio) -> Result<Child, Box<dyn Error>> {
+fn spawn_adb_logcat(serial: Option<&str>, stderr: Stdio) -> Result<Child, Box<dyn Error>> {
     Ok(Command::new(adb_program())
-        .args(logcat_args())
+        .args(logcat_args(serial))
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(stderr)
         .spawn()?)
+}
+
+fn spawn_stderr_logger(stderr: impl std::io::Read + Send + 'static) {
+    thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines().map_while(Result::ok) {
+            Logger::info_fmt("adb stderr:", &[&line]);
+        }
+    });
 }
 
 fn kill_current_child(current_child: &Arc<Mutex<Option<Child>>>) {
@@ -149,8 +193,8 @@ fn stream_stdout(
 /// Spawns `adb logcat -T 0` and returns a channel receiver that emits raw log lines.
 /// `-T 0` skips the historical ring-buffer and streams only live events.
 /// The reading thread automatically restarts on exit so live logs keep flowing.
-pub fn spawn_logcat() -> Result<LogcatHandle, Box<dyn Error>> {
-    let mut child = spawn_adb_logcat(Stdio::piped())?;
+pub fn spawn_logcat(serial: Option<&str>) -> Result<LogcatHandle, Box<dyn Error>> {
+    let mut child = spawn_adb_logcat(serial, Stdio::piped())?;
 
     let stdout = child.stdout.take().ok_or("Failed to capture adb stdout")?;
     let stderr = child.stderr.take().ok_or("Failed to capture adb stderr")?;
@@ -159,6 +203,9 @@ pub fn spawn_logcat() -> Result<LogcatHandle, Box<dyn Error>> {
     let current_child = Arc::new(Mutex::new(Some(child)));
     let reader_stop = Arc::clone(&stop);
     let reader_child = Arc::clone(&current_child);
+    let serial = serial.map(str::to_owned);
+
+    spawn_stderr_logger(stderr);
 
     // Reading thread: streams the initial spawn, then restarts live-only on exit.
     thread::spawn(move || {
@@ -189,7 +236,7 @@ pub fn spawn_logcat() -> Result<LogcatHandle, Box<dyn Error>> {
                 return;
             }
 
-            let mut child = match spawn_adb_logcat(Stdio::null()) {
+            let mut child = match spawn_adb_logcat(serial.as_deref(), Stdio::piped()) {
                 Ok(c) => c,
                 Err(e) => {
                     Logger::info_fmt("adb restart failed:", &[&e.to_string()]);
@@ -201,11 +248,16 @@ pub fn spawn_logcat() -> Result<LogcatHandle, Box<dyn Error>> {
                 Some(s) => s,
                 None => return,
             };
+            let stderr = match child.stderr.take() {
+                Some(s) => s,
+                None => return,
+            };
             if let Ok(mut guard) = reader_child.lock() {
                 *guard = Some(child);
             } else {
                 return;
             }
+            spawn_stderr_logger(stderr);
 
             if sender.send(LogcatEvent::Connected).is_err() {
                 kill_current_child(&reader_child);
@@ -230,14 +282,6 @@ pub fn spawn_logcat() -> Result<LogcatHandle, Box<dyn Error>> {
         }
     });
 
-    // Stderr logging thread.
-    thread::spawn(move || {
-        let reader = BufReader::new(stderr);
-        for line in reader.lines().map_while(Result::ok) {
-            Logger::info_fmt("adb stderr:", &[&line]);
-        }
-    });
-
     Ok(LogcatHandle {
         receiver,
         stop,
@@ -252,19 +296,37 @@ mod tests {
     #[test]
     fn adb_devices_ready_when_at_least_one_device_is_authorized() {
         let output = "List of devices attached\nemulator-5554\tdevice\n";
-        assert_eq!(parse_adb_devices_output(output), DeviceCheck::Ready);
+        assert_eq!(parse_adb_devices_output(output, None), DeviceCheck::Ready);
     }
 
     #[test]
     fn adb_devices_unready_for_unauthorized_or_offline_entries() {
         let output =
             "List of devices attached\nemulator-5554\tunauthorized\nemulator-5556\toffline\n";
-        assert_eq!(parse_adb_devices_output(output), DeviceCheck::Unready);
+        assert_eq!(parse_adb_devices_output(output, None), DeviceCheck::Unready);
     }
 
     #[test]
     fn adb_devices_missing_when_no_entries_exist() {
         let output = "List of devices attached\n\n";
-        assert_eq!(parse_adb_devices_output(output), DeviceCheck::Missing);
+        assert_eq!(parse_adb_devices_output(output, None), DeviceCheck::Missing);
+    }
+
+    #[test]
+    fn adb_devices_require_serial_when_multiple_ready_devices_exist() {
+        let output = "List of devices attached\nemulator-5554\tdevice\nemulator-5556\tdevice\n";
+        assert_eq!(
+            parse_adb_devices_output(output, None),
+            DeviceCheck::MultipleReady
+        );
+    }
+
+    #[test]
+    fn adb_devices_accept_matching_serial() {
+        let output = "List of devices attached\nemulator-5554\tdevice\nemulator-5556\tdevice\n";
+        assert_eq!(
+            parse_adb_devices_output(output, Some("emulator-5556")),
+            DeviceCheck::Ready
+        );
     }
 }

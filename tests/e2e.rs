@@ -77,6 +77,7 @@ fn base_args(tags: &str) -> Args {
         tags: tags.to_string(),
         add_tag: vec![],
         no_tag_filter: false,
+        serial: None,
         debug_level: VerbosityLevel::None,
         highlighted_items: vec![],
         show_items: vec![],
@@ -110,8 +111,8 @@ fn logcat_reconnects_and_shutdown_kills_restarted_child() {
         std::env::set_var("NAVCAT_TEST_DEVICES_LINE", "emulator-5554\tdevice");
     }
 
-    check_device_connected().unwrap();
-    let mut handle = spawn_logcat().unwrap();
+    check_device_connected(None).unwrap();
+    let mut handle = spawn_logcat(None).unwrap();
 
     assert!(matches!(
         handle.receiver().recv_timeout(Duration::from_secs(1)).unwrap(),
@@ -169,4 +170,30 @@ fn logcat_reconnects_and_shutdown_kills_restarted_child() {
         std::env::remove_var("NAVCAT_TEST_DEVICES_LINE");
     }
     panic!("restarted adb child was not terminated by shutdown");
+}
+
+#[test]
+fn multiple_ready_devices_require_serial_and_matching_serial_is_accepted() {
+    let _guard = env_lock().lock().unwrap();
+    let dir = TempDir::new().unwrap();
+    let adb = fake_adb_script(dir.path());
+
+    unsafe {
+        std::env::set_var("NAVCAT_ADB", &adb);
+        std::env::set_var("NAVCAT_TEST_STATE_DIR", dir.path());
+        std::env::set_var(
+            "NAVCAT_TEST_DEVICES_LINE",
+            "emulator-5554\tdevice\nemulator-5556\tdevice",
+        );
+    }
+
+    let err = check_device_connected(None).unwrap_err().to_string();
+    assert!(err.contains("Multiple adb devices are ready"));
+    check_device_connected(Some("emulator-5556")).unwrap();
+
+    unsafe {
+        std::env::remove_var("NAVCAT_ADB");
+        std::env::remove_var("NAVCAT_TEST_STATE_DIR");
+        std::env::remove_var("NAVCAT_TEST_DEVICES_LINE");
+    }
 }
