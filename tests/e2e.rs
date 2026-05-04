@@ -221,3 +221,27 @@ fn missing_requested_serial_reports_the_real_problem() {
         std::env::remove_var("NAVCAT_TEST_DEVICES_LINE");
     }
 }
+
+#[test]
+fn requested_serial_that_is_attached_but_unready_reports_unready() {
+    let _guard = env_lock().lock().unwrap();
+    let dir = TempDir::new().unwrap();
+    let adb = fake_adb_script(dir.path());
+
+    unsafe {
+        std::env::set_var("NAVCAT_ADB", &adb);
+        std::env::set_var("NAVCAT_TEST_STATE_DIR", dir.path());
+        std::env::set_var("NAVCAT_TEST_DEVICES_LINE", "emulator-5554\tunauthorized");
+    }
+
+    let err = check_device_connected(Some("emulator-5554"))
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("attached, but it is not ready"));
+
+    unsafe {
+        std::env::remove_var("NAVCAT_ADB");
+        std::env::remove_var("NAVCAT_TEST_STATE_DIR");
+        std::env::remove_var("NAVCAT_TEST_DEVICES_LINE");
+    }
+}

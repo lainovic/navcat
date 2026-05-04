@@ -55,7 +55,7 @@ pub struct Args {
     #[arg(short, long)]
     pub file: Option<String>,
 
-    /// Log levels to show, comma-separated (V/D/I/W/E/F/S)
+    /// Log levels to show, comma-separated (V/D/I/W/E/F)
     #[arg(short, long, default_value = "I,D,E,W")]
     pub logcat_levels: String,
 

@@ -48,6 +48,7 @@ enum DeviceCheck {
     Missing,
     MultipleReady,
     RequestedSerialMissing,
+    RequestedSerialUnready,
 }
 
 pub fn check_adb_available() -> Result<(), Box<dyn Error>> {
@@ -78,6 +79,10 @@ pub fn check_device_connected(serial: Option<&str>) -> Result<(), Box<dyn Error>
             "Requested adb serial was not found. Re-run with --serial <device-serial> using an attached device."
                 .into(),
         ),
+        DeviceCheck::RequestedSerialUnready => Err(
+            "Requested adb serial is attached, but it is not ready. Check adb authorization / device state."
+                .into(),
+        ),
         DeviceCheck::Missing => {
             Err("No Android devices found. Please connect a device or start an emulator.".into())
         }
@@ -87,6 +92,7 @@ pub fn check_device_connected(serial: Option<&str>) -> Result<(), Box<dyn Error>
 fn parse_adb_devices_output(output: &str, serial: Option<&str>) -> DeviceCheck {
     let mut saw_any_device = false;
     let mut ready_devices = Vec::new();
+    let mut requested_serial_seen = false;
 
     for line in output.lines().skip(1) {
         let trimmed = line.trim();
@@ -95,6 +101,9 @@ fn parse_adb_devices_output(output: &str, serial: Option<&str>) -> DeviceCheck {
         }
         saw_any_device = true;
         if let Some((device_serial, state)) = trimmed.split_once('\t') {
+            if serial == Some(device_serial) {
+                requested_serial_seen = true;
+            }
             if state == "device" {
                 ready_devices.push(device_serial);
             }
@@ -105,7 +114,9 @@ fn parse_adb_devices_output(output: &str, serial: Option<&str>) -> DeviceCheck {
         if ready_devices.iter().any(|device| *device == serial) {
             return DeviceCheck::Ready;
         }
-        return if saw_any_device {
+        return if requested_serial_seen {
+            DeviceCheck::RequestedSerialUnready
+        } else if saw_any_device {
             DeviceCheck::RequestedSerialMissing
         } else {
             DeviceCheck::Missing
@@ -341,6 +352,15 @@ mod tests {
         assert_eq!(
             parse_adb_devices_output(output, Some("emulator-5556")),
             DeviceCheck::RequestedSerialMissing
+        );
+    }
+
+    #[test]
+    fn adb_devices_report_requested_serial_as_unready() {
+        let output = "List of devices attached\nemulator-5554\tunauthorized\n";
+        assert_eq!(
+            parse_adb_devices_output(output, Some("emulator-5554")),
+            DeviceCheck::RequestedSerialUnready
         );
     }
 }

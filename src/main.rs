@@ -9,7 +9,7 @@ _navcat() {
   _arguments \
     '(-f --file)'{-f,--file}'[Load a logcat file into the TUI]:file:_files -g "*.txt(-.)"' \
     '--serial[Target adb device serial for live mode]:serial' \
-    '(-l --logcat-levels)'{-l,--logcat-levels}'[Log levels to show, comma-separated (I/D/E/W/T)]:levels' \
+    '(-l --logcat-levels)'{-l,--logcat-levels}'[Log levels to show, comma-separated (V/D/I/W/E/F)]:levels' \
     '(-t --tags)'{-t,--tags}'[Override the default tag filter list]:tags' \
     '(-a --add-tag)'{-a,--add-tag}'[Add tags on top of the default list]:tag' \
     '(-n --no-tag-filter)'{-n,--no-tag-filter}'[Disable tag filtering, show all tags]' \
