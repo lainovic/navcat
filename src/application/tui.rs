@@ -406,31 +406,29 @@ fn run_loop(
 
         if event::poll(Duration::from_millis(16))? {
             if let Event::Key(key) = event::read()? {
+                dirty = true;
                 if app.search_mode {
                     match key {
                         KeyEvent {
                             code: KeyCode::Esc, ..
                         } => {
                             if app.has_search() {
-                                app.clear_search(); // first Esc: clear query, stay in search
+                                app.clear_search();
                             } else {
-                                app.exit_search(false); // second Esc: exit search
+                                app.exit_search(false);
                             }
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Enter,
                             ..
                         } => {
                             app.exit_search(false);
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Backspace,
                             ..
                         } => {
                             app.search_pop();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char('l'),
@@ -438,21 +436,17 @@ fn run_loop(
                             ..
                         } => {
                             app.clear_buffer();
-                            dirty = true;
                         }
-                        // Arrow keys scroll without leaving search mode
                         KeyEvent {
                             code: KeyCode::Up, ..
                         } => {
                             app.scroll_up();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Down,
                             ..
                         } => {
                             app.scroll_down();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::PageUp,
@@ -464,7 +458,6 @@ fn run_loop(
                             ..
                         } => {
                             app.scroll_page_up();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::PageDown,
@@ -476,13 +469,11 @@ fn run_loop(
                             ..
                         } => {
                             app.scroll_page_down();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::End, ..
                         } => {
                             app.resume_follow();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char(c),
@@ -499,9 +490,8 @@ fn run_loop(
                             } else {
                                 app.search_push(c);
                             }
-                            dirty = true;
                         }
-                        _ => {}
+                        _ => { dirty = false; }
                     }
                 } else {
                     match key {
@@ -513,118 +503,101 @@ fn run_loop(
                                 break;
                             }
                             app.quit_pending = Some(Instant::now() + Duration::from_millis(1500));
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char('/'),
                             ..
                         } => {
                             app.enter_search();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Esc, ..
                         } if app.has_search() => {
                             app.exit_search(true);
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char('['),
                             ..
                         } => {
                             app.clear_filters();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char(']'),
                             ..
                         } => {
                             app.all_categories_on();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char('1'),
                             ..
                         } => {
                             app.toggle_level(1);
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char('2'),
                             ..
                         } => {
                             app.toggle_level(2);
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char('3'),
                             ..
                         } => {
                             app.toggle_level(3);
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char('4'),
                             ..
                         } => {
                             app.toggle_level(4);
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char('5'),
                             ..
                         } => {
                             app.toggle_level(5);
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char('6'),
                             ..
                         } => {
                             app.toggle_level(6);
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char('0'),
                             ..
                         } => {
                             app.reset_levels();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char('-'),
                             ..
                         } => {
                             app.all_levels_off();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char('n'),
                             ..
                         } => {
                             app.toggle_navigation();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char('g'),
                             ..
                         } => {
                             app.toggle_guidance();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char('r'),
                             ..
                         } => {
                             app.toggle_routing();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char('m'),
                             ..
                         } => {
                             app.toggle_mapmatching();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char('w'),
@@ -636,14 +609,12 @@ fn run_loop(
                             };
                             app.save_notice =
                                 Some((Instant::now() + Duration::from_millis(3000), msg));
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char('?'),
                             ..
                         } => {
                             app.toggle_hint();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Up, ..
@@ -653,7 +624,6 @@ fn run_loop(
                             ..
                         } => {
                             app.scroll_up();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Down,
@@ -664,7 +634,6 @@ fn run_loop(
                             ..
                         } => {
                             app.scroll_down();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::PageUp,
@@ -676,7 +645,6 @@ fn run_loop(
                             ..
                         } => {
                             app.scroll_page_up();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::PageDown,
@@ -688,7 +656,6 @@ fn run_loop(
                             ..
                         } => {
                             app.scroll_page_down();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char('f'),
@@ -698,7 +665,6 @@ fn run_loop(
                             code: KeyCode::End, ..
                         } => {
                             app.resume_follow();
-                            dirty = true;
                         }
                         KeyEvent {
                             code: KeyCode::Char('l'),
@@ -706,9 +672,8 @@ fn run_loop(
                             ..
                         } => {
                             app.clear_buffer();
-                            dirty = true;
                         }
-                        _ => {}
+                        _ => { dirty = false; }
                     }
                 }
             }

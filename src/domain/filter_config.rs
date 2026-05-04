@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use crate::application::cli::Args;
 use crate::shared::logger::Logger;
@@ -119,48 +119,49 @@ pub struct FilterConfig {
 
 #[derive(Debug, Clone)]
 pub struct TagCategories {
-    pub routing_tags: Vec<String>,
-    pub mapmatching_tags: Vec<String>,
-    pub guidance_tags: Vec<String>,
-    pub all_tags: HashSet<String>,
+    tags: HashMap<String, TagCategory>,
 }
 
 impl TagCategories {
     pub fn new(tags: Vec<String>) -> Self {
-        let mut routing_tags = Vec::new();
-        let mut mapmatching_tags = Vec::new();
-        let mut guidance_tags = Vec::new();
-        let mut all_tags = HashSet::new();
-
-        for tag in tags {
-            all_tags.insert(tag.clone());
-            match TagCategory::classify(&tag) {
-                TagCategory::Routing => routing_tags.push(tag),
-                TagCategory::MapMatching => mapmatching_tags.push(tag),
-                TagCategory::Guidance => guidance_tags.push(tag),
-                TagCategory::Navigation => {}
-            }
-            // everything else is blue by default — no bucket needed
-        }
-
         Self {
-            routing_tags,
-            mapmatching_tags,
-            guidance_tags,
-            all_tags,
+            tags: tags
+                .into_iter()
+                .map(|t| {
+                    let cat = TagCategory::classify(&t);
+                    (t, cat)
+                })
+                .collect(),
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.tags.is_empty()
+    }
+
     pub fn contains_tag(&self, tag: &str) -> bool {
-        let tag_lower = tag.to_lowercase();
-        Logger::debug_fmt("Checking tag:", &[&tag_lower]);
-        Logger::debug_fmt("Available tags:", &[&self.all_tags]);
-        let result = self
-            .all_tags
-            .iter()
-            .any(|t| tag_lower.contains(&t.to_lowercase()));
-        Logger::debug_fmt("Match result:", &[&result]);
-        result
+        let tag_lower = tag.to_ascii_lowercase();
+        self.tags
+            .keys()
+            .any(|t| tag_lower.contains(&t.to_ascii_lowercase()))
+    }
+
+    /// Returns the category of the first stored tag that is a substring of `tag`,
+    /// checked in priority order: Routing > MapMatching > Guidance > Navigation.
+    pub fn category_of(&self, tag: &str) -> TagCategory {
+        let tag_lower = tag.to_ascii_lowercase();
+        for &priority in &[
+            TagCategory::Routing,
+            TagCategory::MapMatching,
+            TagCategory::Guidance,
+        ] {
+            if self.tags.iter().any(|(t, &cat)| {
+                cat == priority && tag_lower.contains(&t.to_ascii_lowercase())
+            }) {
+                return priority;
+            }
+        }
+        TagCategory::Navigation
     }
 }
 
@@ -242,9 +243,7 @@ impl FilterState {
         }
 
         if !self.guidance {
-            blacklisted_items.push("guidance".to_string());
-            blacklisted_items.push("instruction".to_string());
-            blacklisted_items.push("warning".to_string());
+            blacklisted_items.extend(GUIDANCE_BLACKLIST.iter().map(|&s| s.to_string()));
         }
 
         FilterConfig {
@@ -257,6 +256,8 @@ impl FilterState {
         }
     }
 }
+
+const GUIDANCE_BLACKLIST: &[&str] = &["guidance", "instruction", "warning"];
 
 impl FilterConfig {
     pub(crate) fn to_tags(tags_str: &str) -> Vec<String> {

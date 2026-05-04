@@ -1,5 +1,5 @@
 use crate::domain::FilterConfig;
-use crate::domain::filter_config::TagCategories;
+use crate::domain::filter_config::{TagCategories, TagCategory};
 use crate::domain::highlight_builder::create_default_highlighter;
 use crate::domain::message_highlighter::MessageHighlighter;
 
@@ -15,11 +15,11 @@ enum LogFormat {
 
 #[derive(Clone, Debug)]
 pub struct LogFilter {
-    pub levels: Vec<&'static str>,
-    pub tags: TagCategories,
-    pub blacklisted_items: Vec<String>,
-    pub show_items: Vec<String>,
-    pub no_tag_filter: bool,
+    levels: Vec<&'static str>,
+    tags: TagCategories,
+    blacklisted_items: Vec<String>,
+    show_items: Vec<String>,
+    no_tag_filter: bool,
     message_highlighter: MessageHighlighter,
 }
 
@@ -60,32 +60,14 @@ impl LogFilter {
     }
 
     fn get_tag_color(&self, tag: &str) -> &'static str {
-        let tag_lower = tag.to_ascii_lowercase();
         if tag == "AndroidRuntime" {
-            "\x1b[1;31m"
-        } else if self
-            .tags
-            .routing_tags
-            .iter()
-            .any(|t| tag_lower.contains(&t.to_ascii_lowercase()))
-        {
-            "\x1b[1;31m"
-        } else if self
-            .tags
-            .mapmatching_tags
-            .iter()
-            .any(|t| tag_lower.contains(&t.to_ascii_lowercase()))
-        {
-            "\x1b[33m"
-        } else if self
-            .tags
-            .guidance_tags
-            .iter()
-            .any(|t| tag_lower.contains(&t.to_ascii_lowercase()))
-        {
-            "\x1b[35m"
-        } else {
-            "\x1b[34m"
+            return "\x1b[1;31m";
+        }
+        match self.tags.category_of(tag) {
+            TagCategory::Routing => "\x1b[1;31m",
+            TagCategory::MapMatching => "\x1b[33m",
+            TagCategory::Guidance => "\x1b[35m",
+            TagCategory::Navigation => "\x1b[34m",
         }
     }
 
@@ -189,7 +171,7 @@ impl LogFilter {
         let is_fatal = line_level.eq_ignore_ascii_case("F");
         let is_crash = line_level.eq_ignore_ascii_case("E") && Self::is_crash_tag(line_tag);
         if !self.no_tag_filter && !is_fatal && !is_crash {
-            if self.tags.all_tags.is_empty() || !self.tags.contains_tag(line_tag) {
+            if self.tags.is_empty() || !self.tags.contains_tag(line_tag) {
                 return None;
             }
         }
