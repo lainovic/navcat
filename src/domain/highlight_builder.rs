@@ -1,11 +1,27 @@
 use std::collections::HashSet;
 
+use ratatui::style::{Color, Modifier, Style};
+
 use crate::domain::message_highlighter::MessageHighlighter;
 
-pub const RED_COLOR: &str = "\x1b[1;31m"; // Bold Red
-pub const GREEN_COLOR: &str = "\x1b[1;32m"; // Bold Green
-pub const YELLOW_COLOR: &str = "\x1b[33m"; // Yellow
-pub const BG_YELLOW: &str = "\x1b[43m"; // Background Yellow
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum HighlightPriority {
+    Custom = 0,
+    Green = 1,
+    Yellow = 2,
+    Red = 3,
+}
+
+impl HighlightPriority {
+    pub fn style(self) -> Style {
+        match self {
+            Self::Red => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            Self::Green => Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+            Self::Yellow => Style::default().fg(Color::Yellow),
+            Self::Custom => Style::default().bg(Color::Yellow),
+        }
+    }
+}
 
 pub struct HighlightBuilder {
     red_words: HashSet<String>,
@@ -64,7 +80,6 @@ impl HighlightBuilder {
 
 pub fn create_default_highlighter() -> HighlightBuilder {
     HighlightBuilder::new()
-        // Red highlights for warnings/errors/deviations
         .add_red_words(&[
             "error",
             "removed",
@@ -75,7 +90,6 @@ pub fn create_default_highlighter() -> HighlightBuilder {
             "off-road",
             "off-route",
         ])
-        // Green highlights for positive messages/information
         .add_green_words(&[
             "success",
             "created",
@@ -93,7 +107,6 @@ pub fn create_default_highlighter() -> HighlightBuilder {
             "stopped",
             "stopping",
         ])
-        // Yellow highlights for navigation and map matching events
         .add_yellow_words(&[
             "warning",
             "updated",

@@ -1,9 +1,10 @@
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::Span;
+
 use crate::domain::FilterConfig;
 use crate::domain::filter_config::{TagCategories, TagCategory};
 use crate::domain::highlight_builder::create_default_highlighter;
 use crate::domain::message_highlighter::MessageHighlighter;
-
-pub const RESET_COLOR: &str = "\x1b[0m";
 
 #[derive(Debug)]
 enum LogFormat {
@@ -11,6 +12,28 @@ enum LogFormat {
     Full,           // YYYY-MM-DD HH:MM:SS PID TID LEVEL TAG
     Compact,        // YYYY-MM-DD HH:MM:SS.mmm+TZ LEVEL TAG: MESSAGE
     Short,          // MM-DD HH:MM:SS PID TID LEVEL TAG
+}
+
+/// A filtered log line ready for display. `content` is plain text for search;
+/// `spans` are pre-styled ratatui spans for rendering.
+#[derive(Debug, Clone)]
+pub struct StyledLine {
+    pub content: String,
+    pub spans: Vec<Span<'static>>,
+}
+
+impl StyledLine {
+    fn new(content: String, spans: Vec<Span<'static>>) -> Self {
+        Self { content, spans }
+    }
+
+    pub fn crash_separator() -> Self {
+        let text = "─── crash ───────────────────────────────────────────────────";
+        Self {
+            content: text.to_owned(),
+            spans: vec![Span::styled(text, Style::default().fg(Color::Red))],
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -47,27 +70,30 @@ impl LogFilter {
         }
     }
 
-    fn get_level_color(level: &str) -> &'static str {
+    fn get_level_style(level: &str) -> Style {
         match level {
-            "V" => "\x1b[37m",
-            "D" => "\x1b[36m",
-            "I" => "\x1b[32m",
-            "W" => "\x1b[33m",
-            "E" => "\x1b[31m",
-            "F" => "\x1b[1;97;41m",
-            _ => RESET_COLOR,
+            "V" => Style::default().fg(Color::Gray),
+            "D" => Style::default().fg(Color::Cyan),
+            "I" => Style::default().fg(Color::Green),
+            "W" => Style::default().fg(Color::Yellow),
+            "E" => Style::default().fg(Color::Red),
+            "F" => Style::default()
+                .fg(Color::White)
+                .bg(Color::Red)
+                .add_modifier(Modifier::BOLD),
+            _ => Style::default(),
         }
     }
 
-    fn get_tag_color(&self, tag: &str) -> &'static str {
+    fn get_tag_style(&self, tag: &str) -> Style {
         if tag == "AndroidRuntime" {
-            return "\x1b[1;31m";
+            return Style::default().fg(Color::Red).add_modifier(Modifier::BOLD);
         }
         match self.tags.category_of(tag) {
-            TagCategory::Routing => "\x1b[1;31m",
-            TagCategory::MapMatching => "\x1b[33m",
-            TagCategory::Guidance => "\x1b[35m",
-            TagCategory::Navigation => "\x1b[34m",
+            TagCategory::Routing => Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            TagCategory::MapMatching => Style::default().fg(Color::Yellow),
+            TagCategory::Guidance => Style::default().fg(Color::Magenta),
+            TagCategory::Navigation => Style::default().fg(Color::Blue),
         }
     }
 
@@ -79,15 +105,15 @@ impl LogFilter {
         line.contains(" E AndroidRuntime:")
     }
 
-    fn colorize_crash_message(message: &str) -> String {
-        let t = message.trim_start();
-        if Self::is_crash_exception_line(t) {
-            format!("\x1b[1;31m{message}{RESET_COLOR}") // bold red: exception names / causes
-        } else if Self::is_crash_framework_frame(t) {
-            format!("\x1b[90m{message}{RESET_COLOR}") // dark gray: framework noise
+    fn colorize_crash_message(message: &str) -> Span<'static> {
+        let style = if Self::is_crash_exception_line(message.trim_start()) {
+            Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+        } else if Self::is_crash_framework_frame(message.trim_start()) {
+            Style::default().fg(Color::DarkGray)
         } else {
-            format!("\x1b[31m{message}{RESET_COLOR}") // red: app frames
-        }
+            Style::default().fg(Color::Red)
+        };
+        Span::styled(message.to_owned(), style)
     }
 
     fn is_crash_exception_line(trimmed: &str) -> bool {
@@ -114,14 +140,18 @@ impl LogFilter {
             .any(|p| trimmed.starts_with(p))
     }
 
-    pub fn matches(&self, line: &str) -> Option<String> {
+    pub fn matches(&self, line: &str) -> Option<StyledLine> {
         if line.trim().is_empty() {
             return None;
         }
 
         // Raw stack trace lines (no logcat header) — pass through with dim red.
         if Self::looks_like_stack_trace(line) {
-            return Some(format!("\x1b[2;31m{line}\x1b[0m"));
+            let style = Style::default().fg(Color::Red).add_modifier(Modifier::DIM);
+            return Some(StyledLine::new(
+                line.to_owned(),
+                vec![Span::styled(line.to_owned(), style)],
+            ));
         }
 
         let line_lower = line.to_ascii_lowercase();
@@ -176,36 +206,34 @@ impl LogFilter {
             }
         }
 
-        let mut colored_line = String::new();
+        let dim_gray = Style::default().fg(Color::DarkGray);
+        let mut spans: Vec<Span<'static>> = Vec::new();
+
         for (i, part) in parts.iter().enumerate() {
-            if i == level_idx {
-                colored_line.push_str(Self::get_level_color(part));
-                colored_line.push_str(part);
-                colored_line.push_str(RESET_COLOR);
+            if i < level_idx {
+                spans.push(Span::styled(format!("{} ", part), dim_gray));
+            } else if i == level_idx {
+                spans.push(Span::styled(
+                    format!("{} ", part),
+                    Self::get_level_style(part),
+                ));
             } else if i == tag_idx {
-                let tag = part.trim_end_matches(':');
-                colored_line.push_str(self.get_tag_color(tag));
-                colored_line.push_str(part);
-                colored_line.push_str(RESET_COLOR);
-            } else if i > tag_idx {
+                spans.push(Span::styled(
+                    format!("{} ", part),
+                    self.get_tag_style(line_tag),
+                ));
                 let message = parts[tag_idx + 1..].join(" ");
                 if is_crash {
-                    colored_line.push_str(&Self::colorize_crash_message(&message));
+                    spans.push(Self::colorize_crash_message(&message));
                 } else {
-                    colored_line.push_str(&self.message_highlighter.highlight_message(&message));
+                    spans.extend(self.message_highlighter.highlight_message(&message));
                 }
                 break;
-            } else if i < level_idx {
-                colored_line.push_str("\x1b[90m");
-                colored_line.push_str(part);
-                colored_line.push_str(RESET_COLOR);
-            } else {
-                colored_line.push_str(part);
             }
-            colored_line.push(' ');
         }
 
-        Some(colored_line.trim().to_string())
+        let content: String = spans.iter().map(|s| s.content.as_ref()).collect::<String>();
+        Some(StyledLine::new(content.trim().to_string(), spans))
     }
 
     fn looks_like_stack_trace(line: &str) -> bool {
@@ -289,7 +317,6 @@ mod tests {
 
     #[test]
     fn detect_full_with_pid_tid() {
-        // YYYY-MM-DD HH:MM:SS.mmm +TZ PID TID LEVEL TAG msg
         let line = "2024-01-15 10:30:45.123 +0000 1234 5678 I SomeTag: message";
         let parts: Vec<&str> = line.split_whitespace().collect();
         assert!(matches!(
@@ -300,7 +327,6 @@ mod tests {
 
     #[test]
     fn detect_full() {
-        // YYYY-MM-DD HH:MM:SS PID TID LEVEL TAG msg
         let line = "2024-01-15 10:30:45 1234 5678 I SomeTag: message";
         let parts: Vec<&str> = line.split_whitespace().collect();
         assert!(matches!(
@@ -311,7 +337,6 @@ mod tests {
 
     #[test]
     fn detect_short() {
-        // MM-DD HH:MM:SS.mmm PID TID LEVEL TAG msg
         let line = "01-15 10:30:45.123 1234 5678 I SomeTag: message";
         let parts: Vec<&str> = line.split_whitespace().collect();
         assert!(matches!(
@@ -322,7 +347,6 @@ mod tests {
 
     #[test]
     fn detect_compact() {
-        // YYYY-MM-DD HH:MM:SS.mmm+TZ LEVEL TAG: msg
         let line = "2024-01-15 10:30:45.123+0000 I SomeTag: message";
         let parts: Vec<&str> = line.split_whitespace().collect();
         assert!(matches!(
@@ -448,21 +472,15 @@ mod tests {
     #[test]
     fn matches_stack_trace_lines_pass_through() {
         let filter = make_filter(vec![], vec![], vec![], vec![]);
-        assert!(
-            filter
-                .matches("at com.example.Foo.bar(Foo.kt:42)")
-                .is_some()
-        );
-        assert!(
-            filter
-                .matches("\tat com.example.Foo.bar(Foo.kt:42)")
-                .is_some()
-        );
-        assert!(
-            filter
-                .matches("Caused by: java.lang.NullPointerException")
-                .is_some()
-        );
+        assert!(filter
+            .matches("at com.example.Foo.bar(Foo.kt:42)")
+            .is_some());
+        assert!(filter
+            .matches("\tat com.example.Foo.bar(Foo.kt:42)")
+            .is_some());
+        assert!(filter
+            .matches("Caused by: java.lang.NullPointerException")
+            .is_some());
         assert!(filter.matches("--------- beginning of main").is_none());
     }
 
@@ -470,8 +488,8 @@ mod tests {
     fn matches_stack_trace_lines_are_dim_red() {
         let filter = make_filter(vec![], vec![], vec![], vec![]);
         let result = filter.matches("at com.example.Foo.bar(Foo.kt:42)").unwrap();
-        assert!(result.contains("\x1b[2;31m"));
-        assert!(result.contains("\x1b[0m"));
+        let expected = Style::default().fg(Color::Red).add_modifier(Modifier::DIM);
+        assert!(result.spans.iter().any(|s| s.style == expected));
     }
 
     #[test]
@@ -479,6 +497,10 @@ mod tests {
         let filter = make_filter(vec!["F"], vec![], vec![], vec![]);
         let line = "2024-01-15 10:30:45 1234 5678 F SomeTag: crash";
         let result = filter.matches(line).unwrap();
-        assert!(result.contains("\x1b[1;97;41m"));
+        let expected = Style::default()
+            .fg(Color::White)
+            .bg(Color::Red)
+            .add_modifier(Modifier::BOLD);
+        assert!(result.spans.iter().any(|s| s.style == expected));
     }
 }

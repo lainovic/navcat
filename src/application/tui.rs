@@ -11,14 +11,14 @@ use crossterm::{
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
-    layout::{Alignment, Constraint, Direction, Layout},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{List, ListItem, Paragraph},
 };
 
 use crate::application::adb::{LogcatEvent, LogcatHandle};
-use crate::domain::filter::LogFilter;
+use crate::domain::filter::{LogFilter, StyledLine};
 use crate::domain::filter_config::{FilterState, LevelState};
 
 const MAX_BUFFER: usize = 50_000;
@@ -27,7 +27,10 @@ const FLASH_MS: u64 = 350;
 
 pub struct AppState {
     raw_buffer: Vec<String>,
-    filtered_cache: Vec<String>,
+    filtered_cache: Vec<StyledLine>,
+    /// Indices into filtered_cache for the current display set (all lines if no search,
+    /// matching lines if search is active). Maintained incrementally to keep leave_follow O(1).
+    search_result: Vec<usize>,
     pub filter_state: FilterState,
     filter: LogFilter,
     scroll_offset: usize,
@@ -49,6 +52,7 @@ impl AppState {
         Self {
             raw_buffer: Vec::new(),
             filtered_cache: Vec::new(),
+            search_result: Vec::new(),
             filter_state,
             filter,
             scroll_offset: 0,
@@ -80,7 +84,7 @@ impl AppState {
             }
             if let Some(filtered) = self.filter.matches(line) {
                 if is_crash && !last_was_crash {
-                    cache.push(CRASH_SEPARATOR.to_owned());
+                    cache.push(StyledLine::crash_separator());
                 }
                 cache.push(filtered);
                 if is_crash {
@@ -90,6 +94,34 @@ impl AppState {
         }
         self.filtered_cache = cache;
         self.last_was_crash = last_was_crash;
+        self.rebuild_search_result();
+    }
+
+    fn rebuild_search_result(&mut self) {
+        if self.search_query.is_empty() {
+            self.search_result = (0..self.filtered_cache.len()).collect();
+        } else {
+            let q = self.search_query.to_lowercase();
+            self.search_result = self
+                .filtered_cache
+                .iter()
+                .enumerate()
+                .filter(|(_, l)| l.content.to_lowercase().contains(&q))
+                .map(|(i, _)| i)
+                .collect();
+        }
+    }
+
+    fn push_to_cache(&mut self, line: StyledLine) {
+        let matches = self.search_query.is_empty()
+            || line
+                .content
+                .to_lowercase()
+                .contains(&self.search_query.to_lowercase());
+        if matches {
+            self.search_result.push(self.filtered_cache.len());
+        }
+        self.filtered_cache.push(line);
     }
 
     fn set_flash(&mut self, key: char) {
@@ -160,20 +192,24 @@ impl AppState {
         self.search_mode = false;
         if clear {
             self.search_query.clear();
+            self.rebuild_search_result();
         }
     }
 
     pub fn search_push(&mut self, c: char) {
         self.search_query.push(c);
+        self.rebuild_search_result();
     }
 
     pub fn search_pop(&mut self) {
         self.search_query.pop();
+        self.rebuild_search_result();
         self.follow = true;
     }
 
     pub fn clear_search(&mut self) {
         self.search_query.clear();
+        self.rebuild_search_result();
     }
 
     pub fn has_search(&self) -> bool {
@@ -188,9 +224,9 @@ impl AppState {
         }
         if let Some(filtered) = self.filter.matches(&line) {
             if is_crash && !self.last_was_crash {
-                self.filtered_cache.push(CRASH_SEPARATOR.to_owned());
+                self.push_to_cache(StyledLine::crash_separator());
             }
-            self.filtered_cache.push(filtered);
+            self.push_to_cache(filtered);
             self.last_was_crash = is_crash;
         }
         if self.raw_buffer.len() > MAX_BUFFER {
@@ -204,22 +240,13 @@ impl AppState {
         self.raw_buffer.len()
     }
 
-    pub fn filtered_lines(&self) -> &[String] {
+    pub fn filtered_lines(&self) -> &[StyledLine] {
         &self.filtered_cache
     }
 
     fn leave_follow(&mut self) {
         if self.follow {
-            let display_len = if self.search_query.is_empty() {
-                self.filtered_cache.len()
-            } else {
-                let q = self.search_query.to_lowercase();
-                self.filtered_cache
-                    .iter()
-                    .filter(|l| l.to_lowercase().contains(&q))
-                    .count()
-            };
-            self.scroll_offset = display_len.saturating_sub(self.visible_height);
+            self.scroll_offset = self.search_result.len().saturating_sub(self.visible_height);
             self.follow = false;
         }
     }
@@ -253,6 +280,7 @@ impl AppState {
     pub fn clear_buffer(&mut self) {
         self.raw_buffer.clear();
         self.filtered_cache.clear();
+        self.search_result.clear();
         self.scroll_offset = 0;
         self.follow = true;
         self.last_was_crash = false;
@@ -399,8 +427,7 @@ fn run_loop(
             if let Ok(size) = terminal.size() {
                 app.visible_height = (size.height as usize).saturating_sub(1);
             }
-            let filtered = app.filtered_lines();
-            terminal.draw(|frame| render(app, filtered, frame))?;
+            terminal.draw(|frame| render(app, frame))?;
             dirty = false;
         }
 
@@ -491,7 +518,9 @@ fn run_loop(
                                 app.search_push(c);
                             }
                         }
-                        _ => { dirty = false; }
+                        _ => {
+                            dirty = false;
+                        }
                     }
                 } else {
                     match key {
@@ -673,7 +702,9 @@ fn run_loop(
                         } => {
                             app.clear_buffer();
                         }
-                        _ => { dirty = false; }
+                        _ => {
+                            dirty = false;
+                        }
                     }
                 }
             }
@@ -683,7 +714,7 @@ fn run_loop(
     Ok(())
 }
 
-fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
+fn render(app: &AppState, frame: &mut ratatui::Frame) {
     let area = frame.area();
 
     let constraints: Vec<Constraint> = if app.search_mode {
@@ -708,74 +739,91 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
     };
     let height = log_area.height as usize;
 
-    // Apply search on top of category filter
-    let search_q = app.search_query.to_lowercase();
-    let display: Vec<&String> = if search_q.is_empty() {
-        filtered.iter().collect()
-    } else {
-        filtered
-            .iter()
-            .filter(|l| l.to_lowercase().contains(&search_q))
-            .collect()
-    };
-
+    let display_len = app.search_result.len();
     let scroll_offset = if app.follow {
-        display.len().saturating_sub(height)
+        display_len.saturating_sub(height)
     } else {
-        app.scroll_offset
-            .min(display.len().saturating_sub(1).max(0))
+        app.scroll_offset.min(display_len.saturating_sub(1).max(0))
     };
 
-    if display.is_empty() && app.raw_count() == 0 {
-        frame.render_widget(splash(), log_area);
-    } else if display.is_empty() {
-        let dim = Style::default().fg(Color::DarkGray);
+    render_log_list(app, scroll_offset, height, frame, log_area);
+    if let Some(area) = search_area {
+        render_search_bar(app, frame, area);
+    }
+    render_status_bar(app, display_len, scroll_offset, height, frame, status_area);
+}
+
+fn render_log_list(
+    app: &AppState,
+    scroll_offset: usize,
+    height: usize,
+    frame: &mut ratatui::Frame,
+    area: Rect,
+) {
+    if app.search_result.is_empty() && app.raw_count() == 0 {
+        frame.render_widget(splash(), area);
+        return;
+    }
+    if app.search_result.is_empty() {
         let msg = Paragraph::new(Line::from(vec![Span::styled(
             "  no logs match current filters",
-            dim,
+            Style::default().fg(Color::DarkGray),
         )]));
-        frame.render_widget(msg, log_area);
-    } else {
-        let search_highlight = if search_q.is_empty() {
-            None
-        } else {
-            Some(search_q.as_str())
-        };
-        let items: Vec<ListItem> = display
-            .iter()
-            .skip(scroll_offset)
-            .take(height)
-            .map(|line| ListItem::new(ansi_to_line(line, search_highlight)))
-            .collect();
-        frame.render_widget(List::new(items), log_area);
+        frame.render_widget(msg, area);
+        return;
     }
 
-    // Search bar
-    if let Some(area) = search_area {
-        let bar_style = Style::default().bg(Color::DarkGray).fg(Color::White);
-        let cursor_style = Style::default().bg(Color::White).fg(Color::DarkGray);
-        let search_line = Line::from(vec![
-            Span::styled(" / ", bar_style),
-            Span::styled(app.search_query.clone(), bar_style),
-            Span::styled("█", cursor_style),
-            Span::styled(
-                "  esc:clear  enter:lock",
-                Style::default()
-                    .bg(Color::DarkGray)
-                    .fg(Color::DarkGray)
-                    .add_modifier(Modifier::BOLD),
-            ),
-        ]);
-        frame.render_widget(Paragraph::new(search_line), area);
-    }
+    let search_q = app.search_query.to_lowercase();
+    let items: Vec<ListItem> = app
+        .search_result
+        .iter()
+        .skip(scroll_offset)
+        .take(height)
+        .map(|&idx| {
+            let line = &app.filtered_cache[idx];
+            let spans = if search_q.is_empty() {
+                line.spans.clone()
+            } else {
+                highlight_search_in_spans(line.spans.clone(), &search_q)
+            };
+            ListItem::new(Line::from(spans))
+        })
+        .collect();
+    frame.render_widget(List::new(items), area);
+}
 
+fn render_search_bar(app: &AppState, frame: &mut ratatui::Frame, area: Rect) {
+    let bar_style = Style::default().bg(Color::DarkGray).fg(Color::White);
+    let cursor_style = Style::default().bg(Color::White).fg(Color::DarkGray);
+    let search_line = Line::from(vec![
+        Span::styled(" / ", bar_style),
+        Span::styled(app.search_query.clone(), bar_style),
+        Span::styled("█", cursor_style),
+        Span::styled(
+            "  esc:clear  enter:lock",
+            Style::default()
+                .bg(Color::DarkGray)
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ]);
+    frame.render_widget(Paragraph::new(search_line), area);
+}
+
+fn render_status_bar(
+    app: &AppState,
+    display_len: usize,
+    scroll_offset: usize,
+    height: usize,
+    frame: &mut ratatui::Frame,
+    area: Rect,
+) {
     let base_style = Style::default().bg(Color::DarkGray).fg(Color::White);
     let flash_style = Style::default()
         .bg(Color::White)
         .fg(Color::DarkGray)
         .add_modifier(Modifier::BOLD);
 
-    // Color identifies the category; brightness indicates on/off state
     let toggle_style = |on: bool, key: char| -> Style {
         if app.is_flashing(key) {
             return flash_style;
@@ -790,11 +838,7 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
             'm' => Style::default().bg(Color::DarkGray).fg(Color::Yellow),
             _ => Style::default().bg(Color::DarkGray).fg(Color::White),
         };
-        if on {
-            style
-        } else {
-            style.add_modifier(Modifier::DIM)
-        }
+        if on { style } else { style.add_modifier(Modifier::DIM) }
     };
 
     let mode = if app.follow { "FOLLOW" } else { "PAUSED" };
@@ -802,7 +846,7 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
     let pos = if app.follow {
         String::new()
     } else {
-        let max_scroll = display.len().saturating_sub(height);
+        let max_scroll = display_len.saturating_sub(height);
         if max_scroll == 0 || scroll_offset == 0 {
             " [top]".to_string()
         } else if scroll_offset >= max_scroll {
@@ -846,38 +890,22 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
     let status_line = Line::from(vec![
         Span::styled(" [", base_style),
         Span::styled(
-            if app.filter_state.navigation {
-                "n:on "
-            } else {
-                "n:off"
-            },
+            if app.filter_state.navigation { "n:on " } else { "n:off" },
             toggle_style(app.filter_state.navigation, 'n'),
         ),
         Span::styled(" ", base_style),
         Span::styled(
-            if app.filter_state.guidance {
-                "g:on "
-            } else {
-                "g:off"
-            },
+            if app.filter_state.guidance { "g:on " } else { "g:off" },
             toggle_style(app.filter_state.guidance, 'g'),
         ),
         Span::styled(" ", base_style),
         Span::styled(
-            if app.filter_state.routing {
-                "r:on "
-            } else {
-                "r:off"
-            },
+            if app.filter_state.routing { "r:on " } else { "r:off" },
             toggle_style(app.filter_state.routing, 'r'),
         ),
         Span::styled(" ", base_style),
         Span::styled(
-            if app.filter_state.mapmatching {
-                "m:on "
-            } else {
-                "m:off"
-            },
+            if app.filter_state.mapmatching { "m:on " } else { "m:off" },
             toggle_style(app.filter_state.mapmatching, 'm'),
         ),
         Span::styled("] [", base_style),
@@ -890,7 +918,7 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
         Span::styled(
             format!(
                 "] │ {} / {} │ {}{}{}",
-                display.len(),
+                display_len,
                 app.raw_count(),
                 mode,
                 pos,
@@ -921,11 +949,8 @@ fn render(app: &AppState, filtered: &[String], frame: &mut ratatui::Frame) {
         ),
     ]);
 
-    frame.render_widget(Paragraph::new(status_line), status_area);
+    frame.render_widget(Paragraph::new(status_line), area);
 }
-
-const CRASH_SEPARATOR: &str =
-    "\x1b[31m─── crash ───────────────────────────────────────────────────\x1b[0m";
 
 fn highlight_search_in_spans(spans: Vec<Span<'static>>, query: &str) -> Vec<Span<'static>> {
     if query.is_empty() {
@@ -1035,93 +1060,6 @@ fn splash() -> Paragraph<'static> {
     Paragraph::new(text).alignment(Alignment::Left)
 }
 
-fn parse_sgr(code: &str) -> Style {
-    let params = code.strip_suffix('m').unwrap_or(code);
-    let mut style = Style::default();
-    for param in params.split(';') {
-        let n: u8 = match param.parse() {
-            Ok(v) => v,
-            Err(_) => continue,
-        };
-        style = match n {
-            0 => return Style::default(),
-            1 => style.add_modifier(Modifier::BOLD),
-            2 => style.add_modifier(Modifier::DIM),
-            30..=37 => style.fg(sgr_color(n - 30, false)),
-            39 => style.fg(Color::Reset),
-            40..=47 => style.bg(sgr_color(n - 40, false)),
-            49 => style.bg(Color::Reset),
-            90..=97 => style.fg(sgr_color(n - 90, true)),
-            100..=107 => style.bg(sgr_color(n - 100, true)),
-            _ => style,
-        };
-    }
-    style
-}
-
-fn sgr_color(idx: u8, bright: bool) -> Color {
-    match (idx, bright) {
-        (0, false) => Color::Black,
-        (1, false) => Color::Red,
-        (2, false) => Color::Green,
-        (3, false) => Color::Yellow,
-        (4, false) => Color::Blue,
-        (5, false) => Color::Magenta,
-        (6, false) => Color::Cyan,
-        (7, false) => Color::Gray,
-        (0, true) => Color::DarkGray,
-        (1, true) => Color::LightRed,
-        (2, true) => Color::LightGreen,
-        (3, true) => Color::LightYellow,
-        (4, true) => Color::LightBlue,
-        (5, true) => Color::LightMagenta,
-        (6, true) => Color::LightCyan,
-        (7, true) => Color::White,
-        _ => Color::Reset,
-    }
-}
-
-fn ansi_to_line(s: &str, search: Option<&str>) -> Line<'static> {
-    let mut spans: Vec<Span<'static>> = Vec::new();
-    let mut current_style = Style::default();
-    let mut current_text = String::new();
-    let mut chars = s.chars().peekable();
-
-    while let Some(c) = chars.next() {
-        if c == '\x1b' && chars.peek() == Some(&'[') {
-            chars.next();
-            if !current_text.is_empty() {
-                spans.push(Span::styled(
-                    std::mem::take(&mut current_text),
-                    current_style,
-                ));
-            }
-            let mut code = String::new();
-            for ch in chars.by_ref() {
-                code.push(ch);
-                if ch.is_ascii_alphabetic() {
-                    break;
-                }
-            }
-            current_style = parse_sgr(&code);
-        } else {
-            current_text.push(c);
-        }
-    }
-
-    if !current_text.is_empty() {
-        spans.push(Span::styled(current_text, current_style));
-    }
-
-    let spans = if let Some(q) = search {
-        highlight_search_in_spans(spans, q)
-    } else {
-        spans
-    };
-
-    Line::from(spans)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1171,7 +1109,7 @@ mod tests {
         assert!(
             app.filtered_lines()
                 .iter()
-                .any(|line| line.contains("later"))
+                .any(|line| line.content.contains("later"))
         );
     }
 

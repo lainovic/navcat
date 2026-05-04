@@ -1,34 +1,36 @@
 use std::collections::HashSet;
 
-use crate::domain::filter::RESET_COLOR;
-use crate::domain::highlight_builder::{BG_YELLOW, GREEN_COLOR, RED_COLOR, YELLOW_COLOR};
+use ratatui::text::Span;
+
+use crate::domain::highlight_builder::HighlightPriority;
 use crate::shared::logger::Logger;
 
 #[derive(Debug, Clone)]
 struct HighlightRule {
     terms: HashSet<String>,
-    color: &'static str,
+    priority: HighlightPriority,
 }
 
 #[derive(Debug, Clone)]
 struct Match {
     start: usize,
     end: usize,
-    color: &'static str,
+    priority: HighlightPriority,
 }
 
 impl Match {
-    fn new(start: usize, end: usize, color: &'static str) -> Self {
-        Self { start, end, color }
+    fn new(start: usize, end: usize, priority: HighlightPriority) -> Self {
+        Self {
+            start,
+            end,
+            priority,
+        }
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct MessageHighlighter {
     rules: Vec<HighlightRule>,
-    red_rule: HighlightRule,
-    yellow_rule: HighlightRule,
-    green_rule: HighlightRule,
 }
 
 struct MessageProcessor<'a> {
@@ -49,65 +51,13 @@ impl<'a> MessageProcessor<'a> {
 
         Logger::debug_fmt("Checking message: {}", &[&self.message_lower]);
 
-        // Check red rules
-        for term in &highlighter.red_rule.terms {
-            for (pos, _) in self.message_lower.match_indices(term.as_str()) {
-                Logger::debug_fmt("Found red term at pos {}", &[&pos]);
-                if self.is_complete_match(pos, term.len()) {
-                    Logger::debug("Complete match!");
-                    matches.push(Match::new(
-                        pos,
-                        pos + term.len(),
-                        highlighter.red_rule.color,
-                    ));
-                } else {
-                    Logger::debug("Not a complete match");
-                }
-            }
-        }
-
-        // Check yellow rules
-        for term in &highlighter.yellow_rule.terms {
-            for (pos, _) in self.message_lower.match_indices(term.as_str()) {
-                Logger::debug_fmt("Found yellow term at pos {}", &[&pos]);
-                if self.is_complete_match(pos, term.len()) {
-                    Logger::debug("Complete match!");
-                    matches.push(Match::new(
-                        pos,
-                        pos + term.len(),
-                        highlighter.yellow_rule.color,
-                    ));
-                } else {
-                    Logger::debug("Not a complete match");
-                }
-            }
-        }
-
-        // Check green rules
-        for term in &highlighter.green_rule.terms {
-            for (pos, _) in self.message_lower.match_indices(term.as_str()) {
-                Logger::debug_fmt("Found green term at pos {}", &[&pos]);
-                if self.is_complete_match(pos, term.len()) {
-                    Logger::debug("Complete match!");
-                    matches.push(Match::new(
-                        pos,
-                        pos + term.len(),
-                        highlighter.green_rule.color,
-                    ));
-                } else {
-                    Logger::debug("Not a complete match");
-                }
-            }
-        }
-
-        // Check custom rules
         for rule in &highlighter.rules {
             for term in &rule.terms {
                 for (pos, _) in self.message_lower.match_indices(term.as_str()) {
-                    Logger::debug_fmt("Found custom term at pos {}", &[&pos]);
+                    Logger::debug_fmt("Found term at pos {}", &[&pos]);
                     if self.is_complete_match(pos, term.len()) {
                         Logger::debug("Complete match!");
-                        matches.push(Match::new(pos, pos + term.len(), rule.color));
+                        matches.push(Match::new(pos, pos + term.len(), rule.priority));
                     } else {
                         Logger::debug("Not a complete match");
                     }
@@ -115,18 +65,11 @@ impl<'a> MessageProcessor<'a> {
             }
         }
 
-        // Sort matches by start position
         matches.sort_by_key(|m| m.start);
-
-        // Resolve overlapping matches
-        self.resolve_overlapping_matches(matches, highlighter)
+        self.resolve_overlapping_matches(matches)
     }
 
-    fn resolve_overlapping_matches(
-        &self,
-        matches: Vec<Match>,
-        highlighter: &MessageHighlighter,
-    ) -> Vec<Match> {
+    fn resolve_overlapping_matches(&self, matches: Vec<Match>) -> Vec<Match> {
         let mut resolved = Vec::new();
         let mut current: Option<Match> = None;
         let mut overlapping: Vec<Match> = Vec::new();
@@ -139,16 +82,11 @@ impl<'a> MessageProcessor<'a> {
                 }
                 Some(ref curr) => {
                     if m.start <= curr.end {
-                        // Still overlapping with current group
                         overlapping.push(m);
                     } else {
-                        // No longer overlapping, resolve current group
-                        if let Some(best_match) =
-                            self.find_highest_priority_match(&overlapping, highlighter)
-                        {
-                            resolved.push(best_match);
+                        if let Some(best) = self.find_highest_priority_match(&overlapping) {
+                            resolved.push(best);
                         }
-                        // Start new group
                         current = Some(m.clone());
                         overlapping = vec![m];
                     }
@@ -156,32 +94,17 @@ impl<'a> MessageProcessor<'a> {
             }
         }
 
-        // Resolve final group
         if !overlapping.is_empty() {
-            if let Some(best_match) = self.find_highest_priority_match(&overlapping, highlighter) {
-                resolved.push(best_match);
+            if let Some(best) = self.find_highest_priority_match(&overlapping) {
+                resolved.push(best);
             }
         }
 
         resolved
     }
 
-    fn find_highest_priority_match(
-        &self,
-        matches: &[Match],
-        highlighter: &MessageHighlighter,
-    ) -> Option<Match> {
-        matches
-            .iter()
-            .max_by_key(|m| {
-                match m.color {
-                    c if c == highlighter.red_rule.color => 3, // Red: highest priority
-                    c if c == highlighter.yellow_rule.color => 2, // Yellow: second
-                    c if c == highlighter.green_rule.color => 1, // Green: third
-                    _ => 0,                                    // Custom: lowest priority
-                }
-            })
-            .cloned()
+    fn find_highest_priority_match(&self, matches: &[Match]) -> Option<Match> {
+        matches.iter().max_by_key(|m| m.priority).cloned()
     }
 
     fn is_complete_match(&self, pos: usize, word_len: usize) -> bool {
@@ -204,28 +127,26 @@ impl<'a> MessageProcessor<'a> {
         starts_at_boundary && ends_at_boundary
     }
 
-    fn build_highlighted(&self, matches: Vec<Match>) -> String {
-        let mut highlighted = String::new();
+    fn build_spans(&self, matches: Vec<Match>) -> Vec<Span<'static>> {
+        let mut spans = Vec::new();
         let mut last_end = 0;
 
         for m in matches {
-            // Add uncolored text before the match
             if m.start > last_end {
-                highlighted.push_str(&self.message[last_end..m.start]);
+                spans.push(Span::raw(self.message[last_end..m.start].to_owned()));
             }
-            // Add colored match
-            highlighted.push_str(m.color);
-            highlighted.push_str(&self.message[m.start..m.end]);
-            highlighted.push_str(RESET_COLOR);
+            spans.push(Span::styled(
+                self.message[m.start..m.end].to_owned(),
+                m.priority.style(),
+            ));
             last_end = m.end;
         }
 
-        // Add any remaining uncolored text
         if last_end < self.message.len() {
-            highlighted.push_str(&self.message[last_end..]);
+            spans.push(Span::raw(self.message[last_end..].to_owned()));
         }
 
-        highlighted
+        spans
     }
 }
 
@@ -236,45 +157,42 @@ impl MessageHighlighter {
         yellow_words: HashSet<String>,
         custom_words: HashSet<String>,
     ) -> Self {
-        let red_rule = HighlightRule {
-            terms: red_words,
-            color: RED_COLOR,
-        };
-
-        let green_rule = HighlightRule {
-            terms: green_words,
-            color: GREEN_COLOR,
-        };
-
-        let yellow_rule = HighlightRule {
-            terms: yellow_words,
-            color: YELLOW_COLOR,
-        };
-
-        let custom_rule = HighlightRule {
-            terms: custom_words,
-            color: BG_YELLOW,
-        };
-
         Self {
-            rules: vec![custom_rule],
-            red_rule,
-            yellow_rule,
-            green_rule,
+            rules: vec![
+                HighlightRule {
+                    terms: red_words,
+                    priority: HighlightPriority::Red,
+                },
+                HighlightRule {
+                    terms: yellow_words,
+                    priority: HighlightPriority::Yellow,
+                },
+                HighlightRule {
+                    terms: green_words,
+                    priority: HighlightPriority::Green,
+                },
+                HighlightRule {
+                    terms: custom_words,
+                    priority: HighlightPriority::Custom,
+                },
+            ],
         }
     }
 
-    pub fn highlight_message(&self, message: &str) -> String {
+    pub fn highlight_message(&self, message: &str) -> Vec<Span<'static>> {
         let processor = MessageProcessor::new(message);
         let matches = processor.find_matches(self);
-        processor.build_highlighted(matches)
+        if matches.is_empty() {
+            return vec![Span::raw(message.to_owned())];
+        }
+        processor.build_spans(matches)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::highlight_builder::{BG_YELLOW, GREEN_COLOR, RED_COLOR, YELLOW_COLOR};
+    use crate::domain::highlight_builder::HighlightPriority;
 
     fn make_highlighter(
         red: &[&str],
@@ -286,70 +204,71 @@ mod tests {
         MessageHighlighter::new(to_set(red), to_set(green), to_set(yellow), to_set(custom))
     }
 
-    // --- priority ---
+    fn has_style(spans: &[Span], priority: HighlightPriority) -> bool {
+        spans.iter().any(|s| s.style == priority.style())
+    }
+
+    fn count_style(spans: &[Span], priority: HighlightPriority) -> usize {
+        spans.iter().filter(|s| s.style == priority.style()).count()
+    }
 
     #[test]
     fn red_beats_yellow_on_overlap() {
         let h = make_highlighter(&["error"], &[], &["error"], &[]);
         let result = h.highlight_message("error occurred");
-        assert!(result.contains(RED_COLOR));
-        assert!(!result.contains(YELLOW_COLOR));
+        assert!(has_style(&result, HighlightPriority::Red));
+        assert!(!has_style(&result, HighlightPriority::Yellow));
     }
 
     #[test]
     fn red_beats_green_on_overlap() {
         let h = make_highlighter(&["started"], &["started"], &[], &[]);
         let result = h.highlight_message("started successfully");
-        assert!(result.contains(RED_COLOR));
-        assert!(!result.contains(GREEN_COLOR));
+        assert!(has_style(&result, HighlightPriority::Red));
+        assert!(!has_style(&result, HighlightPriority::Green));
     }
 
     #[test]
     fn yellow_beats_green_on_overlap() {
         let h = make_highlighter(&[], &["progress"], &["progress"], &[]);
         let result = h.highlight_message("progress update");
-        assert!(result.contains(YELLOW_COLOR));
-        assert!(!result.contains(GREEN_COLOR));
+        assert!(has_style(&result, HighlightPriority::Yellow));
+        assert!(!has_style(&result, HighlightPriority::Green));
     }
 
     #[test]
     fn builtin_beats_custom_on_overlap() {
         let h = make_highlighter(&["error"], &[], &[], &["error"]);
         let result = h.highlight_message("error occurred");
-        assert!(result.contains(RED_COLOR));
-        assert!(!result.contains(BG_YELLOW));
+        assert!(has_style(&result, HighlightPriority::Red));
+        assert!(!has_style(&result, HighlightPriority::Custom));
     }
-
-    // --- all occurrences ---
 
     #[test]
     fn all_occurrences_highlighted() {
         let h = make_highlighter(&["error"], &[], &[], &[]);
         let result = h.highlight_message("error then another error here");
-        // RED_COLOR should appear twice
-        assert_eq!(result.matches(RED_COLOR).count(), 2);
+        assert_eq!(count_style(&result, HighlightPriority::Red), 2);
     }
 
     #[test]
     fn single_occurrence_highlighted_once() {
         let h = make_highlighter(&["error"], &[], &[], &[]);
         let result = h.highlight_message("just one error here");
-        assert_eq!(result.matches(RED_COLOR).count(), 1);
+        assert_eq!(count_style(&result, HighlightPriority::Red), 1);
     }
-
-    // --- word boundary ---
 
     #[test]
     fn partial_word_not_highlighted() {
         let h = make_highlighter(&["old"], &[], &[], &[]);
         let result = h.highlight_message("unfolded map");
-        assert!(!result.contains(RED_COLOR));
+        assert!(!has_style(&result, HighlightPriority::Red));
     }
 
     #[test]
     fn exact_word_is_highlighted() {
         let h = make_highlighter(&["old"], &[], &[], &[]);
         let result = h.highlight_message("the old route");
-        assert!(result.contains(RED_COLOR));
+        assert!(has_style(&result, HighlightPriority::Red));
     }
 }
