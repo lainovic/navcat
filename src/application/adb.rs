@@ -2,6 +2,10 @@ use std::error::Error;
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicBool, Ordering},
+};
 use std::thread;
 use std::time::Duration;
 
@@ -13,6 +17,30 @@ pub enum LogcatEvent {
     Disconnected,
 }
 
+pub struct LogcatHandle {
+    receiver: Receiver<LogcatEvent>,
+    stop: Arc<AtomicBool>,
+    current_child: Arc<Mutex<Option<Child>>>,
+}
+
+impl LogcatHandle {
+    pub fn receiver(&self) -> &Receiver<LogcatEvent> {
+        &self.receiver
+    }
+
+    pub fn shutdown(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+        kill_current_child(&self.current_child);
+        wait_current_child(&self.current_child);
+    }
+}
+
+impl Drop for LogcatHandle {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DeviceCheck {
     Ready,
@@ -21,7 +49,7 @@ enum DeviceCheck {
 }
 
 pub fn check_adb_available() -> Result<(), Box<dyn Error>> {
-    match Command::new("adb").arg("version").output() {
+    match Command::new(adb_program()).arg("version").output() {
         Ok(_) => Ok(()),
         Err(e) => {
             if e.kind() == std::io::ErrorKind::NotFound {
@@ -34,7 +62,7 @@ pub fn check_adb_available() -> Result<(), Box<dyn Error>> {
 }
 
 pub fn check_device_connected() -> Result<(), Box<dyn Error>> {
-    let output = Command::new("adb").arg("devices").output()?;
+    let output = Command::new(adb_program()).arg("devices").output()?;
     match parse_adb_devices_output(&String::from_utf8_lossy(&output.stdout)) {
         DeviceCheck::Ready => Ok(()),
         DeviceCheck::Unready => Err(
@@ -72,28 +100,77 @@ fn logcat_args() -> Vec<&'static str> {
     vec!["logcat", "-v", "threadtime", "-T", "0"]
 }
 
-/// Spawns `adb logcat -T 0` and returns a channel receiver that emits raw log lines.
-/// `-T 0` skips the historical ring-buffer and streams only live events.
-/// The reading thread automatically restarts on exit so live logs keep flowing.
-pub fn spawn_logcat() -> Result<(Child, Receiver<LogcatEvent>), Box<dyn Error>> {
-    let mut child = Command::new("adb")
+fn adb_program() -> String {
+    std::env::var("NAVCAT_ADB").unwrap_or_else(|_| "adb".to_string())
+}
+
+fn spawn_adb_logcat(stderr: Stdio) -> Result<Child, Box<dyn Error>> {
+    Ok(Command::new(adb_program())
         .args(logcat_args())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()?;
+        .stderr(stderr)
+        .spawn()?)
+}
+
+fn kill_current_child(current_child: &Arc<Mutex<Option<Child>>>) {
+    if let Ok(mut guard) = current_child.lock() {
+        if let Some(child) = guard.as_mut() {
+            let _ = child.kill();
+        }
+    }
+}
+
+fn wait_current_child(current_child: &Arc<Mutex<Option<Child>>>) {
+    if let Ok(mut guard) = current_child.lock() {
+        if let Some(mut child) = guard.take() {
+            let _ = child.wait();
+        }
+    }
+}
+
+fn stream_stdout(
+    stdout: impl std::io::Read,
+    sender: &mpsc::Sender<LogcatEvent>,
+    stop: &AtomicBool,
+) -> bool {
+    let reader = BufReader::new(stdout);
+    for line in reader.lines().map_while(Result::ok) {
+        if stop.load(Ordering::Relaxed) {
+            return false;
+        }
+        if sender.send(LogcatEvent::Line(line)).is_err() {
+            return false;
+        }
+    }
+    true
+}
+
+/// Spawns `adb logcat -T 0` and returns a channel receiver that emits raw log lines.
+/// `-T 0` skips the historical ring-buffer and streams only live events.
+/// The reading thread automatically restarts on exit so live logs keep flowing.
+pub fn spawn_logcat() -> Result<LogcatHandle, Box<dyn Error>> {
+    let mut child = spawn_adb_logcat(Stdio::piped())?;
 
     let stdout = child.stdout.take().ok_or("Failed to capture adb stdout")?;
     let stderr = child.stderr.take().ok_or("Failed to capture adb stderr")?;
     let (sender, receiver) = mpsc::channel();
+    let stop = Arc::new(AtomicBool::new(false));
+    let current_child = Arc::new(Mutex::new(Some(child)));
+    let reader_stop = Arc::clone(&stop);
+    let reader_child = Arc::clone(&current_child);
 
     // Reading thread: streams the initial spawn, then restarts live-only on exit.
     thread::spawn(move || {
-        let reader = BufReader::new(stdout);
-        for line in reader.lines().map_while(Result::ok) {
-            if sender.send(LogcatEvent::Line(line)).is_err() {
-                return;
-            }
+        if !stream_stdout(stdout, &sender, &reader_stop) {
+            kill_current_child(&reader_child);
+            wait_current_child(&reader_child);
+            return;
+        }
+        wait_current_child(&reader_child);
+
+        if reader_stop.load(Ordering::Relaxed) {
+            return;
         }
         if sender.send(LogcatEvent::Disconnected).is_err() {
             return;
@@ -104,15 +181,15 @@ pub fn spawn_logcat() -> Result<(Child, Receiver<LogcatEvent>), Box<dyn Error>> 
         );
 
         loop {
+            if reader_stop.load(Ordering::Relaxed) {
+                return;
+            }
             thread::sleep(Duration::from_secs(1));
+            if reader_stop.load(Ordering::Relaxed) {
+                return;
+            }
 
-            let mut c = match Command::new("adb")
-                .args(logcat_args())
-                .stdin(Stdio::null())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::null())
-                .spawn()
-            {
+            let mut child = match spawn_adb_logcat(Stdio::null()) {
                 Ok(c) => c,
                 Err(e) => {
                     Logger::info_fmt("adb restart failed:", &[&e.to_string()]);
@@ -120,20 +197,31 @@ pub fn spawn_logcat() -> Result<(Child, Receiver<LogcatEvent>), Box<dyn Error>> 
                 }
             };
 
-            if sender.send(LogcatEvent::Connected).is_err() {
-                return;
-            }
-
-            let stdout = match c.stdout.take() {
+            let stdout = match child.stdout.take() {
                 Some(s) => s,
                 None => return,
             };
+            if let Ok(mut guard) = reader_child.lock() {
+                *guard = Some(child);
+            } else {
+                return;
+            }
 
-            let reader = BufReader::new(stdout);
-            for line in reader.lines().map_while(Result::ok) {
-                if sender.send(LogcatEvent::Line(line)).is_err() {
-                    return;
-                }
+            if sender.send(LogcatEvent::Connected).is_err() {
+                kill_current_child(&reader_child);
+                wait_current_child(&reader_child);
+                return;
+            }
+
+            if !stream_stdout(stdout, &sender, &reader_stop) {
+                kill_current_child(&reader_child);
+                wait_current_child(&reader_child);
+                return;
+            }
+            wait_current_child(&reader_child);
+
+            if reader_stop.load(Ordering::Relaxed) {
+                return;
             }
             if sender.send(LogcatEvent::Disconnected).is_err() {
                 return;
@@ -150,7 +238,11 @@ pub fn spawn_logcat() -> Result<(Child, Receiver<LogcatEvent>), Box<dyn Error>> 
         }
     });
 
-    Ok((child, receiver))
+    Ok(LogcatHandle {
+        receiver,
+        stop,
+        current_child,
+    })
 }
 
 #[cfg(test)]

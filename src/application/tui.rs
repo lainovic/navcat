@@ -1,5 +1,4 @@
 use std::io;
-use std::process::Child;
 use std::sync::mpsc::Receiver;
 
 use std::time::{Duration, Instant};
@@ -18,7 +17,7 @@ use ratatui::{
     widgets::{List, ListItem, Paragraph},
 };
 
-use crate::application::adb::LogcatEvent;
+use crate::application::adb::{LogcatEvent, LogcatHandle};
 use crate::domain::filter::LogFilter;
 use crate::domain::filter_config::{FilterState, LevelState};
 
@@ -177,6 +176,10 @@ impl AppState {
         self.follow = true;
     }
 
+    pub fn clear_search(&mut self) {
+        self.search_query.clear();
+    }
+
     pub fn has_search(&self) -> bool {
         !self.search_query.is_empty()
     }
@@ -310,7 +313,7 @@ impl AppState {
 }
 
 pub fn run_tui(
-    mut child: Option<Child>,
+    mut logcat: Option<LogcatHandle>,
     receiver: Option<Receiver<LogcatEvent>>,
     filter_state: FilterState,
     preloaded: Vec<String>,
@@ -330,14 +333,20 @@ pub fn run_tui(
         // follow stays true — start at bottom (most recent events) for file mode
     }
 
-    let result = run_loop(&mut terminal, &mut app, &receiver, &mut child);
+    let result = run_loop(
+        &mut terminal,
+        &mut app,
+        receiver
+            .as_ref()
+            .or_else(|| logcat.as_ref().map(LogcatHandle::receiver)),
+    );
 
     // Always restore terminal, even on error
     let _ = disable_raw_mode();
     let _ = execute!(terminal.backend_mut(), LeaveAlternateScreen);
     let _ = terminal.show_cursor();
-    if let Some(ref mut c) = child {
-        let _ = c.kill();
+    if let Some(ref mut handle) = logcat {
+        handle.shutdown();
     }
 
     result
@@ -346,8 +355,7 @@ pub fn run_tui(
 fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     app: &mut AppState,
-    receiver: &Option<Receiver<LogcatEvent>>,
-    child: &mut Option<Child>,
+    receiver: Option<&Receiver<LogcatEvent>>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut dirty = true;
 
@@ -357,13 +365,6 @@ fn run_loop(
             while let Ok(event) = rx.try_recv() {
                 app.apply_logcat_event(event);
                 dirty = true;
-            }
-        }
-
-        // Reap the initial adb subprocess so it does not become a zombie.
-        if let Some(c) = child {
-            if matches!(c.try_wait(), Ok(Some(_))) {
-                *child = None;
             }
         }
 
@@ -415,7 +416,7 @@ fn run_loop(
                             code: KeyCode::Esc, ..
                         } => {
                             if app.has_search() {
-                                app.exit_search(true); // first Esc: clear query, stay in search
+                                app.clear_search(); // first Esc: clear query, stay in search
                             } else {
                                 app.exit_search(false); // second Esc: exit search
                             }

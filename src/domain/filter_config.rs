@@ -13,11 +13,12 @@ pub enum TagCategory {
 
 impl TagCategory {
     pub fn classify(tag: &str) -> Self {
-        if tag.contains("Planner") || tag.contains("Replan") {
+        let tag = tag.to_ascii_lowercase();
+        if tag.contains("planner") || tag.contains("replan") {
             Self::Routing
-        } else if tag.contains("Match") || tag.contains("Project") {
+        } else if tag.contains("match") || tag.contains("project") {
             Self::MapMatching
-        } else if tag.contains("Guidance") || tag.contains("Warning") {
+        } else if tag.contains("guidance") || tag.contains("warning") {
             Self::Guidance
         } else {
             Self::Navigation
@@ -250,7 +251,12 @@ impl FilterState {
 
 impl FilterConfig {
     pub(crate) fn to_tags(tags_str: &str) -> Vec<String> {
-        tags_str.split(',').map(|s| s.trim().to_string()).collect()
+        tags_str
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(ToOwned::to_owned)
+            .collect()
     }
 }
 
@@ -282,5 +288,16 @@ mod tests {
             TagCategory::classify("DefaultRouteTrackingEngine"),
             TagCategory::Navigation
         );
+    }
+
+    #[test]
+    fn classify_lowercase_tags() {
+        assert_eq!(TagCategory::classify("replan"), TagCategory::Routing);
+        assert_eq!(TagCategory::classify("guidance"), TagCategory::Guidance);
+    }
+
+    #[test]
+    fn to_tags_drops_empty_entries() {
+        assert_eq!(FilterConfig::to_tags("foo, ,bar,,"), vec!["foo", "bar"]);
     }
 }

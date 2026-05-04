@@ -60,13 +60,29 @@ impl LogFilter {
     }
 
     fn get_tag_color(&self, tag: &str) -> &'static str {
+        let tag_lower = tag.to_ascii_lowercase();
         if tag == "AndroidRuntime" {
             "\x1b[1;31m"
-        } else if self.tags.routing_tags.iter().any(|t| tag.contains(t)) {
+        } else if self
+            .tags
+            .routing_tags
+            .iter()
+            .any(|t| tag_lower.contains(&t.to_ascii_lowercase()))
+        {
             "\x1b[1;31m"
-        } else if self.tags.mapmatching_tags.iter().any(|t| tag.contains(t)) {
+        } else if self
+            .tags
+            .mapmatching_tags
+            .iter()
+            .any(|t| tag_lower.contains(&t.to_ascii_lowercase()))
+        {
             "\x1b[33m"
-        } else if self.tags.guidance_tags.iter().any(|t| tag.contains(t)) {
+        } else if self
+            .tags
+            .guidance_tags
+            .iter()
+            .any(|t| tag_lower.contains(&t.to_ascii_lowercase()))
+        {
             "\x1b[35m"
         } else {
             "\x1b[34m"
@@ -371,6 +387,13 @@ mod tests {
     fn matches_passes_matching_tag() {
         let filter = make_filter(vec!["I"], vec!["Navigation"], vec![], vec![]);
         let line = "2024-01-15 10:30:45 1234 5678 I DefaultNavigation: hello";
+        assert!(filter.matches(line).is_some());
+    }
+
+    #[test]
+    fn matches_passes_matching_tag_case_insensitively() {
+        let filter = make_filter(vec!["I"], vec!["guidance"], vec![], vec![]);
+        let line = "2024-01-15 10:30:45 1234 5678 I LaneGuidance: hello";
         assert!(filter.matches(line).is_some());
     }
 
